@@ -1,0 +1,6 @@
+{
+  "name": "AeroWings Airline Reservation System",
+  "description": "Prestige luxury airline application featuring secure 6-digit OTP verification with 5-minute MongoDB expiration, automated weather safety cancellation & instant refunds, interactive seat selection, and responsive mobile flight booking.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AeroWings Airlines - Intelligent Global Reservation & Flight Operations Portal</title>
+    <meta name="description" content="Prestige luxury airline application featuring secure 6-digit OTP verification with 5-minute MongoDB expiration, automated weather safety cancellation & instant refunds, interactive seat selection, and responsive mobile flight booking." />
+    <meta property="og:title" content="AeroWings Airlines - Intelligent Global Reservation & Flight Operations Portal" />
+    <meta property="og:description" content="Prestige luxury airline application featuring secure 6-digit OTP verification with 5-minute MongoDB expiration, automated weather safety cancellation & instant refunds, interactive seat selection, and responsive mobile flight booking." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script>
+      // Silence benign websocket HMR closure errors in sandboxed preview
+      window.addEventListener('unhandledrejection', function(event) {
+        if (event && event.reason) {
+          var msg = String(event.reason.message || event.reason);
+          if (msg.indexOf('WebSocket') !== -1 || msg.indexOf('websocket') !== -1) {
+            event.preventDefault();
+            if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+          }
+        }
+      });
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+

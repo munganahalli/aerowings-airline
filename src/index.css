@@ -1,0 +1,30 @@
+@import "tailwindcss";
+
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  header,
+  nav,
+  footer,
+  #aerowings-ai-copilot-bar,
+  #aerowings-ai-chatbot,
+  #toast-container,
+  button,
+  .no-print {
+    display: none !important;
+  }
+
+  .ticket-card,
+  #printable-ticket {
+    background: #ffffff !important;
+    color: #000000 !important;
+    border: 2px solid #0284c7 !important;
+    box-shadow: none !important;
+    margin: 0 !important;
+    max-width: 100% !important;
+    page-break-inside: avoid !important;
+  }
+}

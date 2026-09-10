@@ -31,11 +31,29 @@ let dbInstance: Db | null = null;
 let otpCollection: Collection<OtpDocument> | null = null;
 let isMongoConnecting = false;
 
+const DEFAULT_MONGODB_URI = 'mongodb+srv://arunkumartharun400328_db_user:GQv4bcNNhxn312bT@cluster0.kvtruwh.mongodb.net/?appName=Cluster0';
+const DEFAULT_TWILIO_SID = 'AC96b612b55974a9b5bc1152cb9fd85251';
+const DEFAULT_TWILIO_TOKEN = '7f8e24c69aa9d778405895672a450496';
+const DEFAULT_TWILIO_FROM = '+17372508034';
+
+/**
+ * Format phone to international E.164 for SMS delivery
+ */
+export function formatE164Phone(rawPhone: string): string {
+  const digits = rawPhone.trim().replace(/[^0-9+]/g, '');
+  if (digits.startsWith('+')) return digits;
+  if (digits.length === 10) {
+    if (/^[6-9]/.test(digits)) return `+91${digits}`;
+    return `+1${digits}`;
+  }
+  return `+${digits}`;
+}
+
 /**
  * Initialize MongoDB connection and establish TTL index for 5-minute expiration
  */
 export async function initMongo(): Promise<Collection<OtpDocument> | null> {
-  const uri = process.env.MONGODB_URI;
+  const uri = process.env.MONGODB_URI || DEFAULT_MONGODB_URI;
   if (!uri) {
     // Gracefully use secure in-memory storage if MongoDB URI not set
     return null;
@@ -52,8 +70,8 @@ export async function initMongo(): Promise<Collection<OtpDocument> | null> {
   isMongoConnecting = true;
   try {
     mongoClient = new MongoClient(uri, {
-      connectTimeoutMS: 5000,
-      serverSelectionTimeoutMS: 5000
+      connectTimeoutMS: 6000,
+      serverSelectionTimeoutMS: 6000
     });
     await mongoClient.connect();
     dbInstance = mongoClient.db(process.env.MONGODB_DB_NAME || 'aerowings_db');
@@ -64,10 +82,10 @@ export async function initMongo(): Promise<Collection<OtpDocument> | null> {
     // Also index phoneNumber for fast lookups
     await otpCollection.createIndex({ phoneNumber: 1 });
 
-    console.log('✅ MongoDB connected successfully for OTP storage with 5-minute TTL index.');
+    console.log('✅ MongoDB Atlas connected successfully for OTP storage with 5-minute TTL index.');
     return otpCollection;
   } catch (err) {
-    console.warn('⚠️ MongoDB connection unavailable, falling back to secure memory storage:', (err as any)?.message || err);
+    console.warn('⚠️ MongoDB Atlas connection notice:', (err as any)?.message || err);
     return null;
   } finally {
     isMongoConnecting = false;
@@ -89,11 +107,12 @@ export async function sendSmsViaApi(
   otp: string
 ): Promise<{ success: boolean; messageId: string; provider: string; previewText: string }> {
   const message = `Your AeroWings Prestige Flight Booking verification code is: ${otp}. Valid for 5 minutes. Do not share this OTP with anyone.`;
+  const formattedPhone = formatE164Phone(phoneNumber);
   
-  // If external SMS API credentials exist (e.g. Twilio)
-  const twilioSid = process.env.TWILIO_ACCOUNT_SID;
-  const twilioToken = process.env.TWILIO_AUTH_TOKEN;
-  const twilioPhone = process.env.TWILIO_PHONE_NUMBER;
+  // External SMS API credentials (Twilio)
+  const twilioSid = process.env.TWILIO_ACCOUNT_SID || DEFAULT_TWILIO_SID;
+  const twilioToken = process.env.TWILIO_AUTH_TOKEN || DEFAULT_TWILIO_TOKEN;
+  const twilioPhone = process.env.TWILIO_PHONE_NUMBER || DEFAULT_TWILIO_FROM;
 
   if (twilioSid && twilioToken && twilioPhone) {
     try {
@@ -105,7 +124,7 @@ export async function sendSmsViaApi(
           'Content-Type': 'application/x-www-form-urlencoded'
         },
         body: new URLSearchParams({
-          To: phoneNumber,
+          To: formattedPhone,
           From: twilioPhone,
           Body: message
         }).toString()
@@ -113,12 +132,15 @@ export async function sendSmsViaApi(
 
       const resJson: any = await response.json();
       if (response.ok) {
+        console.log(`✅ [Twilio SMS Cloud] Dispatched to ${formattedPhone}. SID: ${resJson.sid}`);
         return {
           success: true,
           messageId: resJson.sid || 'twilio_' + Date.now(),
           provider: 'Twilio SMS Cloud',
           previewText: message
         };
+      } else {
+        console.warn(`⚠️ [Twilio API Notice] Code ${resJson.code}: ${resJson.message}`);
       }
     } catch (smsErr) {
       console.warn('Twilio dispatch failed, using standard SMS gateway fallback:', smsErr);
@@ -127,7 +149,7 @@ export async function sendSmsViaApi(
 
   // Fast2SMS / Generic Gateway or Development SMS Dispatcher
   const simulatedId = 'sms_' + crypto.randomBytes(6).toString('hex');
-  console.log(`📱 [SMS Gateway] Dispatched to ${phoneNumber}: "${message}" (ID: ${simulatedId})`);
+  console.log(`📱 [SMS Gateway] Dispatched to ${formattedPhone}: "${message}" (ID: ${simulatedId})`);
 
   return {
     success: true,
@@ -257,9 +279,10 @@ export async function sendCustomSms(
   phoneNumber: string,
   message: string
 ): Promise<{ success: boolean; messageId: string; provider: string; previewText: string }> {
-  const twilioSid = process.env.TWILIO_ACCOUNT_SID;
-  const twilioToken = process.env.TWILIO_AUTH_TOKEN;
-  const twilioPhone = process.env.TWILIO_PHONE_NUMBER;
+  const formattedPhone = formatE164Phone(phoneNumber);
+  const twilioSid = process.env.TWILIO_ACCOUNT_SID || DEFAULT_TWILIO_SID;
+  const twilioToken = process.env.TWILIO_AUTH_TOKEN || DEFAULT_TWILIO_TOKEN;
+  const twilioPhone = process.env.TWILIO_PHONE_NUMBER || DEFAULT_TWILIO_FROM;
 
   if (twilioSid && twilioToken && twilioPhone) {
     try {
@@ -271,7 +294,7 @@ export async function sendCustomSms(
           'Content-Type': 'application/x-www-form-urlencoded'
         },
         body: new URLSearchParams({
-          To: phoneNumber,
+          To: formattedPhone,
           From: twilioPhone,
           Body: message
         }).toString()
@@ -279,12 +302,15 @@ export async function sendCustomSms(
 
       const resJson: any = await response.json();
       if (response.ok) {
+        console.log(`✅ [Twilio Flight Booking SMS] Sent to ${formattedPhone}. SID: ${resJson.sid}`);
         return {
           success: true,
           messageId: resJson.sid || 'twilio_' + Date.now(),
           provider: 'Twilio SMS Cloud',
           previewText: message
         };
+      } else {
+        console.warn(`⚠️ [Twilio API Notice] Code ${resJson.code}: ${resJson.message}`);
       }
     } catch (smsErr) {
       console.warn('Twilio dispatch failed, using standard gateway fallback:', smsErr);
@@ -292,7 +318,7 @@ export async function sendCustomSms(
   }
 
   const simulatedId = 'sms_res_' + crypto.randomBytes(6).toString('hex');
-  console.log(`📱 [SMS Reservation Gateway] Dispatched to ${phoneNumber}: "${message}" (ID: ${simulatedId})`);
+  console.log(`📱 [SMS Reservation Gateway] Dispatched to ${formattedPhone}: "${message}" (ID: ${simulatedId})`);
 
   return {
     success: true,
@@ -301,4 +327,92 @@ export async function sendCustomSms(
     previewText: message
   };
 }
+
+export interface FlightBookingRecord {
+  pnr: string;
+  phoneNumber: string;
+  passengerName: string;
+  flightNumber: string;
+  origin?: string;
+  destination?: string;
+  departureDate?: string;
+  seatNumber?: string;
+  seatClass?: string;
+  totalPriceINR?: number;
+  createdAt: Date;
+  status: string;
+  smsMessageId?: string;
+}
+
+const inMemoryBookings = new Map<string, FlightBookingRecord>();
+
+/**
+ * Save confirmed booking to MongoDB and automatically dispatch confirmation SMS to linked phone number
+ */
+export async function createFlightBookingAndNotify(bookingData: {
+  phoneNumber: string;
+  passengerName: string;
+  flightNumber: string;
+  origin?: string;
+  destination?: string;
+  departureDate?: string;
+  seatNumber?: string;
+  seatClass?: string;
+  totalPriceINR?: number;
+  pnr?: string;
+  customMessage?: string;
+}): Promise<{
+  booking: FlightBookingRecord;
+  smsDelivery: { success: boolean; messageId: string; provider: string; previewText: string };
+}> {
+  const cleanPhone = (bookingData.phoneNumber || '').trim().replace(/[^0-9+]/g, '');
+  const pnr = (bookingData.pnr || ('AW' + Math.floor(1000 + Math.random() * 9000))).toUpperCase();
+  const passengerName = bookingData.passengerName || 'Valued Passenger';
+  const flightNumber = bookingData.flightNumber || 'AW-402';
+  const origin = bookingData.origin || 'BOM';
+  const destination = bookingData.destination || 'DEL';
+  const departureDate = bookingData.departureDate || new Date().toISOString().split('T')[0];
+  const seatNumber = bookingData.seatNumber || '12A';
+  const seatClass = bookingData.seatClass || 'Economy';
+  const totalPriceINR = Number(bookingData.totalPriceINR) || 4850;
+
+  const smsText = bookingData.customMessage || 
+    `[AeroWings Prestige] Flight Booking Confirmed! PNR: ${pnr}. Passenger: ${passengerName}. Flight: ${flightNumber} (${origin} ➔ ${destination}) on ${departureDate}. Seat: ${seatNumber}, Class: ${seatClass}. Gate: 22A. Show this SMS/QR pass at airport security.`;
+
+  // Send SMS to linked mobile phone
+  const smsResult = await sendCustomSms(cleanPhone, smsText);
+
+  const bookingRecord: FlightBookingRecord = {
+    pnr,
+    phoneNumber: cleanPhone,
+    passengerName,
+    flightNumber,
+    origin,
+    destination,
+    departureDate,
+    seatNumber,
+    seatClass,
+    totalPriceINR,
+    createdAt: new Date(),
+    status: 'Confirmed',
+    smsMessageId: smsResult.messageId
+  };
+
+  // Store in MongoDB if available, otherwise in-memory
+  await initMongo();
+  if (dbInstance) {
+    const bookingCol = dbInstance.collection<FlightBookingRecord>('bookings');
+    await bookingCol.updateOne({ pnr }, { $set: bookingRecord }, { upsert: true });
+  } else {
+    inMemoryBookings.set(pnr, bookingRecord);
+  }
+
+  console.log(`✈️ [Booking Created] PNR: ${pnr} for ${passengerName}. SMS sent to ${cleanPhone}.`);
+
+  return {
+    booking: bookingRecord,
+    smsDelivery: smsResult
+  };
+}
+
 

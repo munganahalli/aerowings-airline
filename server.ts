@@ -8,10 +8,34 @@ import {
   saveOtpToDatabase,
   sendSmsViaApi,
   verifyOtpInDatabase,
-  sendCustomSms
+  sendCustomSms,
+  createFlightBookingAndNotify
 } from './server/otpService.ts';
+import {
+  connectToMongo,
+  saveFlightBooking,
+  getBookingByPnr,
+  getAllBookings,
+  searchBookings,
+  registerUser,
+  findUserByEmailOrPhone,
+  getAllUsers,
+  issueTicket,
+  getTicketByIdentifier,
+  getAllTickets,
+  FlightBookingModel,
+  UserModel,
+  TicketModel
+} from './server/mongoService.ts';
+import {
+  sendSms,
+  sendFlightBookingSms,
+  sendTicketIssuedSms,
+  formatE164Phone,
+  getTwilioClient
+} from './server/twilioSmsService.ts';
 
-dotenv.config();
+dotenv.config({ override: true });
 
 // Port resolution:
 // 1. In AI Studio dev container, DEFAULT_APP_PORT is 3000 (proxied via nginx).
@@ -131,13 +155,29 @@ async function startServer() {
 
   app.use(express.json());
 
+  // Connect to MongoDB using process.env.MONGODB_URI
+  connectToMongo().then(() => {
+    console.log('✈️ [AeroWings Database] MongoDB persistence initialized.');
+  }).catch(err => {
+    console.warn('⚠️ [AeroWings Database Notice] MongoDB init notice:', err?.message || err);
+  });
+
   // 1. Health & Intranet/Network Ping Endpoint
   app.get('/api/health', (req, res) => {
+    const isTwilioConfigured = !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_PHONE_NUMBER);
     res.json({
       status: 'online',
       timestamp: new Date().toISOString(),
       service: 'AeroWings Flight Reservation Cloud Network',
-      networkState: 'connected'
+      networkState: 'connected',
+      database: {
+        provider: 'MongoDB',
+        configured: !!process.env.MONGODB_URI
+      },
+      smsGateway: {
+        provider: isTwilioConfigured ? 'Twilio SMS Cloud' : 'Simulated Gateway',
+        configured: isTwilioConfigured
+      }
     });
   });
 
@@ -225,13 +265,78 @@ Context provided: ${JSON.stringify(contextData)}`;
               const flightNumber = args.flightNumber || 'AW-402';
               const seatClass = args.seatClass || 'Economy';
               const totalPriceINR = Number(args.totalPriceINR) || 4500;
-              const smsMessage = args.smsMessage || `AeroWings Booking Confirmed! PNR: ${bookingPnr} for ${passengerName}. Flight: ${flightNumber}, Class: ${seatClass}. Price: INR ${totalPriceINR}. Have a pleasant journey.`;
+              const ticketNum = `AW-ETK-${Math.floor(100000 + Math.random() * 900000)}`;
 
-              // Dispatch real SMS or prestige gateway notification
-              const smsDispatchResult = await sendCustomSms(recipientPhone, smsMessage);
+              // 1. Dispatch real SMS via dedicated Twilio SMS service
+              const smsDispatchResult = await sendFlightBookingSms({
+                pnr: bookingPnr,
+                passengerName,
+                flightNumber,
+                seatClass,
+                seatNumber: '12A',
+                recipientPhone,
+                ticketNumber: ticketNum,
+                customMessage: args.smsMessage
+              });
+
+              // 2. Persist flight booking in MongoDB model
+              await saveFlightBooking({
+                pnr: bookingPnr,
+                ticketNumber: ticketNum,
+                flightNumber,
+                airline: 'AeroWings',
+                origin: 'DEL',
+                destination: 'BOM',
+                departureDate: new Date().toISOString().split('T')[0],
+                departureTime: '10:30',
+                arrivalDate: new Date().toISOString().split('T')[0],
+                arrivalTime: '12:45',
+                passengerName,
+                passengers: [{
+                  firstName: passengerName.split(' ')[0] || 'Valued',
+                  lastName: passengerName.split(' ').slice(1).join(' ') || 'Passenger',
+                  seat: '12A',
+                  type: 'Adult',
+                  ticketNumber: ticketNum
+                }],
+                seatNumbers: ['12A'],
+                seatClass,
+                totalPriceINR,
+                contactEmail: 'passenger@aerowings.com',
+                contactPhone: recipientPhone,
+                status: 'Confirmed',
+                paymentStatus: 'PAID',
+                gate: '22A',
+                terminal: 'T3',
+                smsSent: smsDispatchResult.success,
+                smsMessageId: smsDispatchResult.messageId,
+                source: 'ai_concierge'
+              });
+
+              // 3. Persist ticket details in MongoDB model
+              await issueTicket({
+                ticketNumber: ticketNum,
+                pnr: bookingPnr,
+                passengerName,
+                flightNumber,
+                airline: 'AeroWings',
+                origin: 'DEL',
+                destination: 'BOM',
+                route: 'DEL ➔ BOM',
+                departureDate: new Date().toISOString().split('T')[0],
+                departureTime: '10:30',
+                seatNumber: '12A',
+                seatClass,
+                gate: '22A',
+                terminal: 'T3',
+                boardingGroup: 'Group 2',
+                boardingTime: '09:45',
+                barcodeHash: `AW*${bookingPnr}*${ticketNum}`,
+                status: 'ISSUED'
+              });
 
               res.json({
-                reply: `✈️ **Flight Booking Successfully Confirmed!**\n\n• **PNR:** **${bookingPnr}**\n• **Passenger:** ${passengerName}\n• **Flight:** **${flightNumber}**\n• **Class:** ${seatClass}\n• **Total Fare:** ₹${totalPriceINR.toLocaleString('en-IN')}\n\n📱 **Confirmation SMS Dispatched to:** **${recipientPhone}**\n*SMS Gateway Status:* Delivered via ${smsDispatchResult.provider}`,
+                reply: `✈️ **Flight Booking Successfully Confirmed & Persisted in MongoDB!**\n\n• **PNR:** **${bookingPnr}**\n• **E-Ticket:** **${ticketNum}**\n• **Passenger:** ${passengerName}\n• **Flight:** **${flightNumber}**\n• **Class:** ${seatClass}\n• **Total Fare:** ₹${totalPriceINR.toLocaleString('en-IN')}\n\n📱 **Confirmation SMS:** ${smsDispatchResult.success ? `Dispatched to ${recipientPhone} via ${smsDispatchResult.provider}` : `Queued (${smsDispatchResult.error || 'simulated fallback'})`}`,
                 functionCall: {
                   name: 'process_flight_booking',
                   args: {
@@ -241,19 +346,20 @@ Context provided: ${JSON.stringify(contextData)}`;
                     seatClass,
                     totalPriceINR,
                     recipientPhone,
-                    smsMessage
+                    smsMessage: args.smsMessage
                   }
                 },
                 bookingResult: {
                   status: 'confirmed',
                   pnr: bookingPnr,
+                  ticketNumber: ticketNum,
                   passengerName,
                   flightNumber,
                   seatClass,
                   totalPriceINR,
                   recipientPhone,
-                  smsMessage,
                   smsMessageId: smsDispatchResult.messageId,
+                  smsStatus: smsDispatchResult.status,
                   confirmedAt: new Date().toISOString()
                 },
                 language,
@@ -889,7 +995,277 @@ RULES:
     }
   });
 
-  // 7. Vite Middleware Integration (Development) / Static Files (Production)
+  // 7. Flight Booking Creation & SMS Dispatch to Linked Phone Number (MongoDB + Twilio)
+  const handleBookingCreation = async (req: express.Request, res: express.Response) => {
+    try {
+      const {
+        phoneNumber,
+        passengerName = 'Valued Passenger',
+        flightNumber = 'AW-402',
+        airline = 'AeroWings',
+        origin = 'BOM',
+        destination = 'DEL',
+        departureDate = new Date().toISOString().split('T')[0],
+        departureTime = '10:30',
+        arrivalDate = new Date().toISOString().split('T')[0],
+        arrivalTime = '12:45',
+        seatNumber = '12A',
+        seatClass = 'Economy',
+        totalPriceINR = 4850,
+        contactEmail = 'reservations@aerowings.com',
+        passengers,
+        gate = '22A',
+        terminal = 'T3',
+        pnr: providedPnr,
+        customMessage
+      } = req.body;
+
+      if (!phoneNumber || typeof phoneNumber !== 'string' || phoneNumber.trim().length < 8) {
+        res.status(400).json({
+          success: false,
+          error: 'A valid linked mobile phone number is required to receive flight booking confirmation SMS.'
+        });
+        return;
+      }
+
+      const cleanPhone = phoneNumber.trim();
+      const pnr = providedPnr || ('AW' + Math.floor(1000 + Math.random() * 9000));
+      const ticketNumber = `AW-ETK-${Math.floor(100000 + Math.random() * 900000)}`;
+
+      // 1. Dispatch Real SMS via Dedicated Twilio Service (Catches all Twilio errors cleanly)
+      const smsDelivery = await sendFlightBookingSms({
+        pnr,
+        passengerName,
+        flightNumber,
+        origin,
+        destination,
+        departureDate,
+        departureTime,
+        seatNumber,
+        seatClass,
+        totalPriceINR: Number(totalPriceINR),
+        recipientPhone: cleanPhone,
+        ticketNumber,
+        gate,
+        customMessage
+      });
+
+      // 2. Persist Flight Booking into MongoDB Model
+      const bookingDoc = await saveFlightBooking({
+        pnr,
+        ticketNumber,
+        flightNumber,
+        airline,
+        origin,
+        destination,
+        departureDate,
+        departureTime,
+        arrivalDate,
+        arrivalTime,
+        passengerName,
+        passengers: passengers && Array.isArray(passengers) && passengers.length > 0 
+          ? passengers 
+          : [{
+              firstName: passengerName.split(' ')[0] || 'Valued',
+              lastName: passengerName.split(' ').slice(1).join(' ') || 'Passenger',
+              seat: seatNumber,
+              type: 'Adult',
+              ticketNumber
+            }],
+        seatNumbers: [seatNumber],
+        seatClass,
+        totalPriceINR: Number(totalPriceINR),
+        contactEmail,
+        contactPhone: cleanPhone,
+        status: 'Confirmed',
+        paymentStatus: 'PAID',
+        gate,
+        terminal,
+        smsSent: smsDelivery.success,
+        smsMessageId: smsDelivery.messageId,
+        source: 'web_portal'
+      });
+
+      // 3. Persist Ticket Details into MongoDB Model
+      const ticketDoc = await issueTicket({
+        ticketNumber,
+        pnr,
+        passengerName,
+        flightNumber,
+        airline,
+        origin,
+        destination,
+        route: `${origin} ➔ ${destination}`,
+        departureDate,
+        departureTime,
+        seatNumber,
+        seatClass,
+        gate,
+        terminal,
+        boardingGroup: 'Group 2',
+        boardingTime: '45 mins prior to departure',
+        barcodeHash: `AW*${pnr}*${ticketNumber}`,
+        status: 'ISSUED'
+      });
+
+      res.json({
+        success: true,
+        message: 'Flight booked successfully! Stored in MongoDB and confirmation SMS processed via Twilio.',
+        booking: bookingDoc,
+        ticket: ticketDoc,
+        smsDelivery: {
+          status: smsDelivery.status,
+          success: smsDelivery.success,
+          messageId: smsDelivery.messageId,
+          provider: smsDelivery.provider,
+          recipientPhone: cleanPhone,
+          smsMessage: smsDelivery.body,
+          error: smsDelivery.error
+        }
+      });
+    } catch (err: any) {
+      console.error('[Booking Creation Error]', err);
+      res.status(500).json({
+        success: false,
+        error: err?.message || 'Failed to process flight booking and SMS dispatch.'
+      });
+    }
+  };
+
+  // Mount booking creation on both endpoints
+  app.post('/api/bookings', handleBookingCreation);
+  app.post('/api/booking/create', handleBookingCreation);
+
+  // 8. Query Bookings from MongoDB
+  app.get('/api/bookings', async (req, res) => {
+    try {
+      const { q, limit } = req.query;
+      let bookings: FlightBookingModel[] = [];
+      if (q && typeof q === 'string') {
+        bookings = await searchBookings(q);
+      } else {
+        bookings = await getAllBookings(Number(limit) || 100);
+      }
+      res.json({ success: true, count: bookings.length, bookings });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message || 'Error fetching bookings' });
+    }
+  });
+
+  app.get('/api/bookings/:pnr', async (req, res) => {
+    try {
+      const { pnr } = req.params;
+      const booking = await getBookingByPnr(pnr);
+      if (!booking) {
+        res.status(404).json({ success: false, error: `Booking with PNR ${pnr} not found in database.` });
+        return;
+      }
+      res.json({ success: true, booking });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message || 'Error fetching booking' });
+    }
+  });
+
+  // 9. User Registration Endpoint (MongoDB `users` collection)
+  app.post('/api/users/register', async (req, res) => {
+    try {
+      const { fullName, email, phoneNumber, frequentFlyerNumber, tier } = req.body;
+
+      if (!fullName || !email || !phoneNumber) {
+        res.status(400).json({
+          success: false,
+          error: 'fullName, email, and phoneNumber are required for registration.'
+        });
+        return;
+      }
+
+      const user = await registerUser({
+        fullName,
+        email,
+        phoneNumber,
+        frequentFlyerNumber,
+        tier
+      });
+
+      res.json({
+        success: true,
+        message: 'User registered successfully and stored in MongoDB.',
+        user
+      });
+    } catch (err: any) {
+      console.error('[User Registration Error]', err);
+      res.status(500).json({ success: false, error: err?.message || 'Registration failed' });
+    }
+  });
+
+  app.get('/api/users', async (req, res) => {
+    try {
+      const users = await getAllUsers();
+      res.json({ success: true, count: users.length, users });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message || 'Error fetching users' });
+    }
+  });
+
+  // 10. Ticket Details Persistence (MongoDB `tickets` collection)
+  app.post('/api/tickets/issue', async (req, res) => {
+    try {
+      const ticket = await issueTicket(req.body);
+      
+      // Optionally notify via SMS if recipientPhone provided
+      if (req.body.recipientPhone) {
+        sendTicketIssuedSms(
+          req.body.recipientPhone,
+          ticket.passengerName,
+          ticket.ticketNumber,
+          ticket.pnr,
+          ticket.flightNumber
+        ).catch(e => console.warn('Ticket SMS notice:', e));
+      }
+
+      res.json({
+        success: true,
+        message: 'Ticket details successfully issued and stored in MongoDB.',
+        ticket
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message || 'Ticket issuance failed' });
+    }
+  });
+
+  app.get('/api/tickets/:identifier', async (req, res) => {
+    try {
+      const ticket = await getTicketByIdentifier(req.params.identifier);
+      if (!ticket) {
+        res.status(404).json({ success: false, error: 'Ticket not found in database.' });
+        return;
+      }
+      res.json({ success: true, ticket });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message || 'Error fetching ticket' });
+    }
+  });
+
+  // 11. Dedicated SMS Send API (Twilio SMS Service)
+  app.post('/api/sms/send', async (req, res) => {
+    try {
+      const { phoneNumber, message } = req.body;
+      if (!phoneNumber || !message) {
+        res.status(400).json({ success: false, error: 'phoneNumber and message are required.' });
+        return;
+      }
+
+      const result = await sendSms(phoneNumber, message);
+      res.json({
+        success: result.success,
+        delivery: result
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message || 'SMS service error' });
+    }
+  });
+
+  // 8. Vite Middleware Integration (Development) / Static Files (Production)
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },

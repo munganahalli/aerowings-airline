@@ -746,6 +746,26 @@ export const AirlineProvider: React.FC<{ children: React.ReactNode }> = ({ child
       pnr
     });
 
+    // Dispatch SMS via Backend SMS Gateway API to linked phone number
+    if (contactPhone) {
+      fetch('/api/booking/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phoneNumber: contactPhone,
+          passengerName: `${passengers[0]?.firstName || ''} ${passengers[0]?.lastName || ''}`.trim() || 'Passenger',
+          flightNumber: `${selectedFlight.airlineCode}-${selectedFlight.flightNumber}`,
+          origin: selectedFlight.origin.code,
+          destination: selectedFlight.destination.code,
+          departureDate: newBooking.departureDate,
+          seatNumber: passengers[0]?.seatNumber || '12A',
+          seatClass: searchParams.cabinClass,
+          totalPriceINR: breakdown.finalTotal,
+          pnr
+        })
+      }).catch(smsErr => console.warn('SMS dispatch to linked phone logged:', smsErr));
+    }
+
     // Trigger Real Email Confirmation to Registered Email
     airlineDB.addEmail({
       recipientEmail: contactEmail,

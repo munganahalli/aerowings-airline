@@ -86,6 +86,52 @@ curl -X POST http://localhost:5001/api/otp/verify \
 }
 ```
 
+### Endpoint 3: Flight Booking & Dispatch SMS to Linked Mobile Phone
+```bash
+curl -X POST http://localhost:5001/api/booking/create \
+  -H "Content-Type: application/json" \
+  -d '{
+    "phoneNumber": "9876543210",
+    "passengerName": "Arun Kumar",
+    "flightNumber": "AW-402",
+    "origin": "BOM",
+    "destination": "DEL",
+    "departureDate": "2026-09-15",
+    "seatNumber": "12A",
+    "seatClass": "Economy",
+    "totalPriceINR": 4850
+  }'
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Flight booked successfully! Confirmation SMS dispatched to linked phone number.",
+  "booking": {
+    "pnr": "AW2665",
+    "phoneNumber": "9876543210",
+    "passengerName": "Arun Kumar",
+    "flightNumber": "AW-402",
+    "origin": "BOM",
+    "destination": "DEL",
+    "departureDate": "2026-09-15",
+    "seatNumber": "12A",
+    "seatClass": "Economy",
+    "totalPriceINR": 4850,
+    "status": "Confirmed",
+    "smsMessageId": "sms_book_ee36ffb14b74"
+  },
+  "smsDelivery": {
+    "status": "delivered",
+    "messageId": "sms_book_ee36ffb14b74",
+    "provider": "AeroWings Mock SMS Gateway",
+    "recipientPhone": "9876543210",
+    "smsMessage": "[AeroWings Prestige] Flight Booking Confirmed! PNR: AW2665. Passenger: Arun Kumar. Flight: AW-402 (BOM ➔ DEL) on 2026-09-15. Seat: 12A, Class: Economy. Gate: 22A. Show this SMS/QR pass at airport security."
+  }
+}
+```
+
 ---
 
 ## 4. 1-Click Debugging in VS Code

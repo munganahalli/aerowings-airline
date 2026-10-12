@@ -18,7 +18,10 @@ import {
   Calendar, 
   Building2,
   ChevronDown,
-  CloudSun
+  CloudSun,
+  Mic,
+  MicOff,
+  Zap
 } from 'lucide-react';
 import { AirlineLogo } from './AirlineLogo';
 import { LanguageSwitcher } from './LanguageSwitcher';
@@ -35,6 +38,8 @@ export const Navbar: React.FC = () => {
     setCurrency,
     userProfile,
     bookings,
+    isVoiceModeActive,
+    toggleVoiceMode,
   } = useAirline();
 
   const { t } = useLanguage();
@@ -175,6 +180,36 @@ export const Navbar: React.FC = () => {
 
           {/* Right Action Buttons */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            {/* Hands-Free AI Voice Mode Toggle */}
+            <button
+              id="nav-ai-voice-mode-toggle"
+              type="button"
+              onClick={toggleVoiceMode}
+              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-md ${
+                isVoiceModeActive
+                  ? 'bg-gradient-to-r from-blue-600 via-indigo-600 to-sky-500 text-white border border-sky-400 ring-2 ring-sky-500/30 animate-pulse'
+                  : 'bg-slate-900/90 hover:bg-slate-800 text-sky-300 border border-blue-500/30 hover:border-blue-500/60'
+              }`}
+              title="Toggle hands-free speech-only AI Voice Booking Mode"
+            >
+              {isVoiceModeActive ? (
+                <>
+                  <Mic className="w-3.5 h-3.5 text-white animate-bounce" />
+                  <span className="font-extrabold tracking-wide">AI Voice Active</span>
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping shrink-0" />
+                </>
+              ) : (
+                <>
+                  <Mic className="w-3.5 h-3.5 text-sky-400" />
+                  <span className="hidden sm:inline">AI Voice Mode</span>
+                  <span className="sm:hidden">Voice</span>
+                  <span className="hidden md:inline px-1.5 py-0.2 rounded text-[9px] bg-blue-500/20 text-sky-300 border border-blue-500/30 font-mono">
+                    Hands-Free
+                  </span>
+                </>
+              )}
+            </button>
+
             {portalMode === 'user' ? (
               <>
                 {/* Admin Mode Switcher */}

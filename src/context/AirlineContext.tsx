@@ -5,6 +5,7 @@ import { CURRENCIES, generatePNR, generateTicketNumber } from '../utils/airlineU
 import { aiVoice } from '../utils/aiVoice';
 import { airlineDB } from '../utils/airlineDatabase';
 import { generateFlightsForRoute } from '../utils/flightRouteGenerator';
+import { setAirportWeatherOverride, clearAirportWeatherOverrides, isAirportWeatherUnsafe } from '../utils/realtimeWeather';
 
 interface UserProfile {
   name: string;
@@ -66,9 +67,14 @@ interface AirlineContextType {
   hasPriorityBoarding: boolean;
   setHasPriorityBoarding: (val: boolean) => void;
   appliedOffer: Offer | null;
+  promoCode: string | null;
+  discountAmount: number;
   applyPromoCode: (code: string) => { success: boolean; message: string };
   removePromoCode: () => void;
+  verifiedBookingPhone: string;
+  setVerifiedBookingPhone: (phone: string) => void;
   calculateFareBreakdown: () => {
+    originalBaseFare: number;
     baseFare: number;
     taxesAndFees: number;
     seatsTotal: number;
@@ -76,11 +82,25 @@ interface AirlineContextType {
     baggageTotal: number;
     insuranceTotal: number;
     priorityBoardingTotal: number;
-    specialFareDiscount?: number;
+    specialFareDiscount: number;
+    specialFareType: 'regular' | 'student' | 'senior' | 'armed_forces' | 'doctors_nurses';
+    specialFareLabel: string;
+    extraFreeBaggageKg: number;
     couponDiscount: number;
     finalTotal: number;
   };
   completeBooking: (paymentMethod: 'card' | 'upi' | 'netbanking' | 'wallet', paymentId: string, contactEmail: string, contactPhone: string) => Booking;
+  executeVoiceBooking: (details: {
+    origin?: string;
+    destination?: string;
+    flightNumber?: string;
+    passengerName?: string;
+    recipientPhone?: string;
+    seatClass?: string;
+    seatNumber?: string;
+    totalPriceINR?: number;
+    smsMessage?: string;
+  }) => Promise<Booking>;
   currentBookingSuccess: Booking | null;
   setCurrentBookingSuccess: (booking: Booking | null) => void;
 
@@ -90,6 +110,7 @@ interface AirlineContextType {
   instantWeatherRefund: (pnr: string) => { success: boolean; refundAmount: number };
   instantWeatherRebook: (pnr: string, targetFlightId: string) => { success: boolean; message: string };
   triggerWeatherDisruption: (airportCode: string, weatherType: WeatherCondition['condition'], severityLevel: 'normal' | 'moderate' | 'severe') => void;
+  checkAndAutoCancelWeatherDisruptedBookings: () => void;
   aiAutoCancelFlight: (flightId: string, customReason?: string) => void;
   checkInBooking: (pnr: string) => boolean;
   getBookingByPNR: (pnr: string) => Booking | undefined;
@@ -124,6 +145,25 @@ interface AirlineContextType {
   markNotificationRead: (id: string) => void;
   markAllNotificationsRead: () => void;
   clearNotifications: () => void;
+
+  // Hands-Free AI Voice Mode & Wizard
+  isVoiceModeActive: boolean;
+  toggleVoiceMode: () => void;
+  setVoiceMode: (active: boolean) => void;
+
+  // Multi-City Itinerary Segments
+  multiCitySegments: Array<{ origin: string; destination: string; departureDate: string }>;
+  setMultiCitySegments: React.Dispatch<React.SetStateAction<Array<{ origin: string; destination: string; departureDate: string }>>>;
+
+  // GST & Price Drop Protection
+  hasGstNumber: boolean;
+  setHasGstNumber: (has: boolean) => void;
+  gstin: string;
+  setGstin: (gstin: string) => void;
+  companyName: string;
+  setCompanyName: (name: string) => void;
+  hasPriceDropProtection: boolean;
+  setHasPriceDropProtection: (protect: boolean) => void;
 }
 
 const defaultSearchParams: FlightSearchParams = {
@@ -149,7 +189,22 @@ export const AirlineProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const setAiLanguage = (lang: AiLanguageCode) => {
     setAiLanguageState(lang);
     aiVoice.setLanguage(lang);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('aerowings_ai_language_sync', { detail: lang }));
+    }
   };
+
+  useEffect(() => {
+    const handleWebsiteLangSync = (e: Event) => {
+      const customEvent = e as CustomEvent<string>;
+      if (customEvent.detail) {
+        setAiLanguageState(customEvent.detail as AiLanguageCode);
+        aiVoice.setLanguage(customEvent.detail as AiLanguageCode);
+      }
+    };
+    window.addEventListener('aerowings_website_language_sync', handleWebsiteLangSync);
+    return () => window.removeEventListener('aerowings_website_language_sync', handleWebsiteLangSync);
+  }, []);
 
   // Portal & Views
   const [portalMode, setPortalMode] = useState<'user' | 'admin'>('user');
@@ -189,6 +244,24 @@ export const AirlineProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [hasPriorityBoarding, setHasPriorityBoarding] = useState<boolean>(false);
   const [appliedOffer, setAppliedOffer] = useState<Offer | null>(null);
   const [currentBookingSuccess, setCurrentBookingSuccess] = useState<Booking | null>(null);
+  const [verifiedBookingPhone, setVerifiedBookingPhoneState] = useState<string>(() => {
+    try {
+      return localStorage.getItem('aerowings_linked_phone') || '';
+    } catch {
+      return '';
+    }
+  });
+
+  const setVerifiedBookingPhone = (phone: string) => {
+    setVerifiedBookingPhoneState(phone);
+    try {
+      if (phone) {
+        localStorage.setItem('aerowings_linked_phone', phone);
+      }
+    } catch {
+      // ignore storage error
+    }
+  };
 
   // Admin Auth
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(() => {
@@ -206,6 +279,43 @@ export const AirlineProvider: React.FC<{ children: React.ReactNode }> = ({ child
       miles: 14500,
     };
   });
+
+  // Hands-Free AI Voice Mode
+  const [isVoiceModeActive, setIsVoiceModeActive] = useState<boolean>(false);
+  const toggleVoiceMode = () => {
+    setIsVoiceModeActive(prev => {
+      const next = !prev;
+      if (next) {
+        aiVoice.speak('AeroWings AI Voice Mode activated. Where would you like to fly?', { lang: aiLanguage });
+      } else {
+        aiVoice.speak('AI Voice Mode paused.', { lang: aiLanguage });
+      }
+      return next;
+    });
+  };
+  const setVoiceMode = (active: boolean) => {
+    setIsVoiceModeActive(active);
+  };
+
+  // Multi-City Itinerary Segments (at least 2 segments default)
+  const [multiCitySegments, setMultiCitySegments] = useState<Array<{ origin: string; destination: string; departureDate: string }>>([
+    {
+      origin: 'DEL',
+      destination: 'BOM',
+      departureDate: new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0]
+    },
+    {
+      origin: 'BOM',
+      destination: 'BLR',
+      departureDate: new Date(Date.now() + 86400000 * 6).toISOString().split('T')[0]
+    }
+  ]);
+
+  // GST & Price Drop Protection
+  const [hasGstNumber, setHasGstNumber] = useState<boolean>(false);
+  const [gstin, setGstin] = useState<string>('');
+  const [companyName, setCompanyName] = useState<string>('');
+  const [hasPriceDropProtection, setHasPriceDropProtection] = useState<boolean>(false);
 
   // Real-time Notification Preferences and Event Log
   const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferences>(() => {
@@ -305,9 +415,10 @@ export const AirlineProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const addToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
     const id = Date.now().toString() + Math.random().toString(36).substring(2, 5);
     setToasts(prev => [...prev, { id, type, message }]);
+    const duration = message.includes('OTP') ? 9000 : 4500;
     setTimeout(() => {
       setToasts(prev => prev.filter(t => t.id !== id));
-    }, 4000);
+    }, duration);
   };
 
   const removeToast = (id: string) => {
@@ -450,10 +561,21 @@ export const AirlineProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setBookings(prev => {
       const nextBookings = prev.map(b => {
         if (b.flight.id === id) {
-          const updatedB = {
+          const isCancelledNow = status === 'Cancelled';
+          const updatedB: Booking = {
             ...b,
+            status: isCancelledNow ? 'Cancelled' : b.status,
+            cancellationReason: isCancelledNow
+              ? 'AI Automated Weather & Flight Safety Grounding: 100% Zero-Deduction Full Refund Disbursed.'
+              : b.cancellationReason,
+            refundAmount: isCancelledNow ? b.priceBreakdown.finalTotal : b.refundAmount,
+            refundStatus: isCancelledNow ? 'Processed' : b.refundStatus,
             flight: { ...b.flight, status, delayMinutes }
           };
+
+          if (currentBookingSuccess && currentBookingSuccess.pnr === b.pnr) {
+            setCurrentBookingSuccess(updatedB);
+          }
 
           // Dispatch flight status alert directly to passenger's linked phone & email
           const pnr = b.pnr;
@@ -498,8 +620,10 @@ export const AirlineProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const resetDefaultFlights = () => {
+    clearAirportWeatherOverrides();
     setFlights(INITIAL_FLIGHTS);
-    addToast('Flight schedule reset to defaults', 'info');
+    airlineDB.saveFlights(INITIAL_FLIGHTS);
+    addToast('All airport weather conditions & flight schedules restored to Clear Skies.', 'info');
   };
 
   // Search Engine
@@ -581,9 +705,23 @@ export const AirlineProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // Promo Code
   const applyPromoCode = (code: string) => {
     const clean = code.trim().toUpperCase();
-    const found = OFFERS.find(o => o.code === clean);
+    const insiderOffer: Offer = {
+      id: 'off-insider',
+      code: 'INSIDER20',
+      title: 'AeroWings Insider Club VIP 20% Off',
+      description: 'Exclusive Insider Club member discount with zero convenience fee.',
+      discountType: 'percentage',
+      discountValue: 20,
+      minAmount: 1000,
+      expiresOn: '2026-12-31',
+      bannerColor: 'from-amber-600 to-amber-900',
+      tag: 'INSIDER VIP'
+    };
+    const found = clean === 'INSIDER20' || clean === 'AEROFLY500'
+      ? (clean === 'INSIDER20' ? insiderOffer : (OFFERS.find(o => o.code === clean) || insiderOffer))
+      : OFFERS.find(o => o.code === clean);
     if (!found) {
-      return { success: false, message: 'Invalid promo code. Try FLYBCA150 or FIRSTFLY' };
+      return { success: false, message: 'Invalid promo code. Try INSIDER20, FLYBCA150, or FIRSTFLY' };
     }
 
     const { baseFare } = calculateFareBreakdown();
@@ -603,8 +741,20 @@ export const AirlineProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   // Fare Calculation
   const calculateFareBreakdown = () => {
+    const specialFareType = searchParams.specialFare || 'regular';
+    const specialFareLabels: Record<string, string> = {
+      regular: 'Regular Fare',
+      student: 'Student Concession (10% Off + 10kg Extra Baggage)',
+      senior: 'Senior Citizen Concession (12% Off)',
+      armed_forces: 'Defence / Armed Forces Concession (15% Off)',
+      doctors_nurses: 'Doctors & Nurses Concession (10% Off)',
+    };
+    const specialFareLabel = specialFareLabels[specialFareType] || 'Regular Fare';
+    const extraFreeBaggageKg = specialFareType === 'student' ? 10 : 0;
+
     if (!selectedFlight) {
       return {
+        originalBaseFare: 0,
         baseFare: 0,
         taxesAndFees: 0,
         seatsTotal: 0,
@@ -612,6 +762,10 @@ export const AirlineProvider: React.FC<{ children: React.ReactNode }> = ({ child
         baggageTotal: 0,
         insuranceTotal: 0,
         priorityBoardingTotal: 0,
+        specialFareDiscount: 0,
+        specialFareType,
+        specialFareLabel,
+        extraFreeBaggageKg,
         couponDiscount: 0,
         finalTotal: 0,
       };
@@ -625,16 +779,16 @@ export const AirlineProvider: React.FC<{ children: React.ReactNode }> = ({ child
     let specialFareDiscount = 0;
 
     // Special Fare Discounts
-    if (searchParams.specialFare === 'student') {
+    if (specialFareType === 'student') {
       specialFareDiscount = Math.round(fullBaseFare * 0.10); // 10% student discount
       baseFare = fullBaseFare - specialFareDiscount;
-    } else if (searchParams.specialFare === 'senior') {
+    } else if (specialFareType === 'senior') {
       specialFareDiscount = Math.round(fullBaseFare * 0.12); // 12% senior discount
       baseFare = fullBaseFare - specialFareDiscount;
-    } else if (searchParams.specialFare === 'armed_forces') {
+    } else if (specialFareType === 'armed_forces') {
       specialFareDiscount = Math.round(fullBaseFare * 0.15); // 15% defence discount
       baseFare = fullBaseFare - specialFareDiscount;
-    } else if (searchParams.specialFare === 'doctors_nurses') {
+    } else if (specialFareType === 'doctors_nurses') {
       specialFareDiscount = Math.round(fullBaseFare * 0.10); // 10% healthcare worker discount
       baseFare = fullBaseFare - specialFareDiscount;
     }
@@ -679,6 +833,7 @@ export const AirlineProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const finalTotal = Math.max(0, subTotal - couponDiscount);
 
     return {
+      originalBaseFare: fullBaseFare,
       baseFare,
       taxesAndFees,
       seatsTotal,
@@ -687,6 +842,9 @@ export const AirlineProvider: React.FC<{ children: React.ReactNode }> = ({ child
       insuranceTotal,
       priorityBoardingTotal,
       specialFareDiscount,
+      specialFareType,
+      specialFareLabel,
+      extraFreeBaggageKg,
       couponDiscount,
       finalTotal,
     };
@@ -705,12 +863,28 @@ export const AirlineProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const pnr = generatePNR();
     const ticketNumber = generateTicketNumber();
 
+    // Check if origin, destination, or flight weather has deteriorated to severe/unsafe while going to book
+    const origSafety = isAirportWeatherUnsafe(selectedFlight.origin.code);
+    const destSafety = isAirportWeatherUnsafe(selectedFlight.destination.code);
+    const flightWeatherUnsafe =
+      selectedFlight.status === 'Cancelled' ||
+      selectedFlight.weather?.aiCancellationRisk === 'Critical - Auto Cancelled' ||
+      origSafety.unsafe ||
+      destSafety.unsafe;
+
+    const unsafeReason = origSafety.unsafe
+      ? `AI Automated Doppler Weather Protection: Ticket Auto-Cancelled due to severe ${origSafety.condition} at ${selectedFlight.origin.city} (${selectedFlight.origin.code}). 100% Instant Full Refund of ₹${breakdown.finalTotal.toLocaleString()} credited.`
+      : destSafety.unsafe
+      ? `AI Automated Doppler Weather Protection: Ticket Auto-Cancelled due to severe ${destSafety.condition} at ${selectedFlight.destination.city} (${selectedFlight.destination.code}). 100% Instant Full Refund of ₹${breakdown.finalTotal.toLocaleString()} credited.`
+      : selectedFlight.weather?.aiAutoCancelReason ||
+        `AI Automated Doppler Weather Protection: Ticket Auto-Cancelled due to unsafe weather along corridor. 100% Instant Full Refund of ₹${breakdown.finalTotal.toLocaleString()} credited.`;
+
     const newBooking: Booking = {
       id: `BK-${Date.now().toString().slice(-4)}`,
       pnr,
       ticketNumber,
       flightId: selectedFlight.id,
-      flight: selectedFlight,
+      flight: flightWeatherUnsafe ? { ...selectedFlight, status: 'Cancelled' } : selectedFlight,
       returnFlightId: selectedReturnFlight?.id,
       returnFlight: selectedReturnFlight || undefined,
       tripType: searchParams.tripType,
@@ -721,14 +895,16 @@ export const AirlineProvider: React.FC<{ children: React.ReactNode }> = ({ child
       contactEmail,
       contactPhone,
       bookingDate: new Date().toISOString().split('T')[0],
-      status: 'Confirmed',
+      status: flightWeatherUnsafe ? 'Cancelled' : 'Confirmed',
+      cancellationReason: flightWeatherUnsafe ? unsafeReason : undefined,
+      refundAmount: flightWeatherUnsafe ? breakdown.finalTotal : undefined,
       priceBreakdown: breakdown,
       paymentMethod,
       paymentId,
       hasInsurance,
       hasPriorityBoarding,
       specialFare: searchParams.specialFare,
-      refundStatus: 'Not Applicable',
+      refundStatus: flightWeatherUnsafe ? 'Processed' : 'Not Applicable',
     };
 
     setBookings(prev => [newBooking, ...prev]);
@@ -815,6 +991,165 @@ export const AirlineProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return newBooking;
   };
 
+  // Hands-Free AI Voice Booking Execution (Processes full booking without human hands)
+  const executeVoiceBooking = async (details: {
+    origin?: string;
+    destination?: string;
+    flightNumber?: string;
+    passengerName?: string;
+    recipientPhone?: string;
+    seatClass?: string;
+    seatNumber?: string;
+    totalPriceINR?: number;
+    smsMessage?: string;
+  }): Promise<Booking> => {
+    const origCode = (details.origin || searchParams.origin || 'DEL').toUpperCase();
+    const destCode = (details.destination || searchParams.destination || 'BOM').toUpperCase();
+
+    // Find best flight or generate for route
+    let targetFlight = flights.find(f => 
+      (details.flightNumber && f.flightNumber.toLowerCase().includes(details.flightNumber.toLowerCase().replace(/[^a-z0-9]/g, ''))) ||
+      (f.origin.code === origCode && f.destination.code === destCode)
+    );
+
+    if (!targetFlight) {
+      const generated = generateFlightsForRoute(origCode, destCode);
+      if (generated.length > 0) {
+        targetFlight = generated[0];
+        setFlights(prev => [targetFlight!, ...prev]);
+        airlineDB.saveFlights([targetFlight!, ...flights]);
+      } else {
+        targetFlight = flights[0];
+      }
+    }
+
+    setSelectedFlight(targetFlight);
+
+    const rawName = (details.passengerName || userProfile.name || 'Valued Passenger').trim();
+    const nameParts = rawName.split(' ');
+    const fName = nameParts[0] || 'Valued';
+    const lName = nameParts.slice(1).join(' ') || 'Passenger';
+    const phone = details.recipientPhone || userProfile.phone || verifiedBookingPhone || '9876543210';
+    const assignedSeat = details.seatNumber || '12A';
+
+    setPassengers([{
+      id: `p-voice-${Date.now()}`,
+      title: 'Mr',
+      firstName: fName,
+      lastName: lName,
+      gender: 'Male',
+      dob: '1995-01-01',
+      type: 'adult',
+      seatNumber: assignedSeat,
+      seatPrice: 0
+    }]);
+
+    setSelectedSeats({
+      0: {
+        id: assignedSeat,
+        row: 12,
+        col: 'A',
+        type: 'window',
+        price: 0,
+        isAvailable: true,
+        cabinClass: 'economy'
+      }
+    });
+
+    const origSafety = isAirportWeatherUnsafe(targetFlight.origin.code);
+    const destSafety = isAirportWeatherUnsafe(targetFlight.destination.code);
+    const isUnsafe = origSafety.unsafe || destSafety.unsafe;
+
+    const pnr = generatePNR();
+    const ticketNumber = generateTicketNumber();
+    const baseFare = details.totalPriceINR ? Math.round(details.totalPriceINR * 0.88) : targetFlight.prices.economy;
+    const taxesAndFees = Math.round(baseFare * 0.12 + 350);
+    const finalTotal = details.totalPriceINR || (baseFare + taxesAndFees);
+
+    const newBooking: Booking = {
+      id: `BK-${Date.now().toString().slice(-4)}`,
+      pnr,
+      ticketNumber,
+      flightId: targetFlight.id,
+      flight: isUnsafe ? { ...targetFlight, status: 'Cancelled' } : targetFlight,
+      tripType: 'one_way',
+      departureDate: new Date().toISOString().split('T')[0],
+      cabinClass: (details.seatClass as any) || 'economy',
+      passengers: [{
+        id: `p-voice-${Date.now()}`,
+        title: 'Mr',
+        firstName: fName,
+        lastName: lName,
+        gender: 'Male',
+        dob: '1995-01-01',
+        type: 'adult',
+        seatNumber: assignedSeat
+      }],
+      contactEmail: 'passenger@aerowings.com',
+      contactPhone: phone,
+      bookingDate: new Date().toISOString().split('T')[0],
+      status: isUnsafe ? 'Cancelled' : 'Confirmed',
+      cancellationReason: isUnsafe ? `AI Doppler Weather Protection: Ticket auto-cancelled due to severe weather. 100% full refund credited.` : undefined,
+      refundAmount: isUnsafe ? finalTotal : undefined,
+      refundStatus: isUnsafe ? 'Processed' : 'Not Applicable',
+      priceBreakdown: {
+        baseFare,
+        taxesAndFees,
+        seatsTotal: 0,
+        mealsTotal: 0,
+        baggageTotal: 0,
+        insuranceTotal: 0,
+        priorityBoardingTotal: 0,
+        specialFareDiscount: 0,
+        couponDiscount: 0,
+        finalTotal
+      },
+      paymentMethod: 'upi',
+      paymentId: `VOICE-AI-${Date.now()}`,
+      hasInsurance: true,
+      hasPriorityBoarding: false,
+      specialFare: 'regular'
+    };
+
+    setBookings(prev => [newBooking, ...prev]);
+    setCurrentBookingSuccess(newBooking);
+    airlineDB.addBooking(newBooking);
+
+    // Persist to backend and dispatch SMS
+    try {
+      await fetch('/api/booking/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phoneNumber: phone,
+          passengerName: rawName,
+          flightNumber: `${targetFlight.airlineCode}-${targetFlight.flightNumber}`,
+          origin: targetFlight.origin.code,
+          destination: targetFlight.destination.code,
+          departureDate: newBooking.departureDate,
+          seatNumber: assignedSeat,
+          seatClass: details.seatClass || 'Economy',
+          totalPriceINR: finalTotal,
+          pnr
+        })
+      });
+    } catch {}
+
+    airlineDB.addSms({
+      phoneNumber: phone,
+      type: 'BOOKING_CONFIRMATION',
+      title: 'Voice Reservation Confirmed • E-Ticket Issued',
+      body: `AeroWings Voice AI Confirmed! PNR: ${pnr}. Flight ${targetFlight.airlineCode}${targetFlight.flightNumber} [${targetFlight.origin.code} ➔ ${targetFlight.destination.code}]. Seat: ${assignedSeat}. Total: ₹${finalTotal.toLocaleString('en-IN')}.`,
+      pnr
+    });
+
+    aiVoice.announceBookingConfirmed(pnr, 1, targetFlight.flightNumber);
+    setUserView('confirmation');
+    addToast(`🎙️ AI Voice Reservation Confirmed! PNR: ${pnr} • SMS Sent to ${phone}`, 'success');
+
+    return newBooking;
+  };
+
   // Cancel Booking
   const cancelBooking = (pnr: string, reason: string) => {
     const booking = bookings.find(b => b.pnr === pnr);
@@ -823,18 +1158,25 @@ export const AirlineProvider: React.FC<{ children: React.ReactNode }> = ({ child
       return { success: false, refundAmount: 0 };
     }
 
-    // Cancellation fee logic: ₹1,500 deduction, rest refunded
-    const refundAmount = Math.max(0, booking.priceBreakdown.finalTotal - 1500);
+    // If weather-related cancellation, 100% zero deduction; otherwise ₹1,500 standard fee
+    const isWeatherCancel = reason.toLowerCase().includes('weather') || reason.toLowerCase().includes('storm') || reason.toLowerCase().includes('cyclone') || reason.toLowerCase().includes('fog');
+    const refundAmount = isWeatherCancel
+      ? booking.priceBreakdown.finalTotal
+      : Math.max(0, booking.priceBreakdown.finalTotal - 1500);
 
     setBookings(prev => prev.map(b => {
       if (b.pnr === pnr) {
-        return {
+        const updated: Booking = {
           ...b,
           status: 'Cancelled',
           cancellationReason: reason,
           refundAmount,
           refundStatus: 'Processed',
         };
+        if (currentBookingSuccess && currentBookingSuccess.pnr === pnr) {
+          setCurrentBookingSuccess(updated);
+        }
+        return updated;
       }
       return b;
     }));
@@ -875,13 +1217,17 @@ export const AirlineProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     setBookings(prev => prev.map(b => {
       if (b.pnr === pnr) {
-        return {
+        const updated: Booking = {
           ...b,
           status: 'Cancelled',
           cancellationReason: 'AI Doppler Weather Protection: 100% Zero-Deduction Instant Refund Disbursed',
           refundAmount: fullRefundAmount,
           refundStatus: 'Processed',
         };
+        if (currentBookingSuccess && currentBookingSuccess.pnr === pnr) {
+          setCurrentBookingSuccess(updated);
+        }
+        return updated;
       }
       return b;
     }));
@@ -929,7 +1275,7 @@ export const AirlineProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     setBookings(prev => prev.map(b => {
       if (b.pnr === pnr) {
-        return {
+        const updated: Booking = {
           ...b,
           flightId: targetFlight.id,
           flight: targetFlight,
@@ -938,6 +1284,10 @@ export const AirlineProvider: React.FC<{ children: React.ReactNode }> = ({ child
           refundStatus: 'Not Applicable',
           rebookingNote: `AI Rebooked from ${b.flight.flightNumber} due to weather disruption with free VIP perks.`
         };
+        if (currentBookingSuccess && currentBookingSuccess.pnr === pnr) {
+          setCurrentBookingSuccess(updated);
+        }
+        return updated;
       }
       return b;
     }));
@@ -952,15 +1302,30 @@ export const AirlineProvider: React.FC<{ children: React.ReactNode }> = ({ child
     weatherType: WeatherCondition['condition'],
     severityLevel: 'normal' | 'moderate' | 'severe'
   ) => {
-    const isSevere = severityLevel === 'severe' || weatherType === 'Typhoon / Cyclone' || weatherType === 'Blizzard' || weatherType === 'Heavy Thunderstorm';
-    
+    const isClear = weatherType === 'Clear' || severityLevel === 'normal';
+    const isSevere =
+      !isClear &&
+      (severityLevel === 'severe' ||
+        weatherType === 'Typhoon / Cyclone' ||
+        weatherType === 'Blizzard' ||
+        weatherType === 'Heavy Thunderstorm' ||
+        weatherType === 'Dense Fog');
+
+    const effectiveSeverity: 'normal' | 'moderate' | 'severe' = isClear
+      ? 'normal'
+      : isSevere
+      ? 'severe'
+      : 'moderate';
+
+    // Sync live meteorological override so all weather widgets and predictors immediately reflect this condition
+    setAirportWeatherOverride(airportCode, weatherType, effectiveSeverity);
+
     let updatedFlightCount = 0;
     let autoCancelledCount = 0;
 
-    setFlights(prev => prev.map(f => {
-      const isOrigin = f.origin.code === airportCode;
-      const isDest = f.destination.code === airportCode;
-
+    const transformFlightWeather = (f: Flight): Flight => {
+      const isOrigin = f.origin.code.toUpperCase() === airportCode.toUpperCase();
+      const isDest = f.destination.code.toUpperCase() === airportCode.toUpperCase();
       if (!isOrigin && !isDest) return f;
 
       updatedFlightCount++;
@@ -974,17 +1339,17 @@ export const AirlineProvider: React.FC<{ children: React.ReactNode }> = ({ child
       let isAiAuto = false;
       let cancelReason: string | undefined = undefined;
 
-      if (severityLevel === 'severe') {
+      if (effectiveSeverity === 'severe') {
         newStatus = 'Cancelled';
         aiRisk = 'Critical - Auto Cancelled';
         riskScore = 96;
         stormIdx = 92;
-        wind = 85;
-        vis = 0.8;
+        wind = 88;
+        vis = weatherType === 'Dense Fog' ? 0.2 : 0.8;
         isAiAuto = true;
         cancelReason = `AI Auto-Cancelled: Severe ${weatherType} alert at ${airportCode} exceeding flight safety limits (Wind: ${wind}km/h, Visibility: ${vis}km).`;
         autoCancelledCount++;
-      } else if (severityLevel === 'moderate') {
+      } else if (effectiveSeverity === 'moderate') {
         newStatus = 'Delayed';
         aiRisk = 'Moderate';
         riskScore = 55;
@@ -1003,7 +1368,7 @@ export const AirlineProvider: React.FC<{ children: React.ReactNode }> = ({ child
       return {
         ...f,
         status: newStatus,
-        delayMinutes: severityLevel === 'moderate' ? 45 : 0,
+        delayMinutes: effectiveSeverity === 'moderate' ? 45 : 0,
         weather: {
           ...f.weather,
           condition: weatherType,
@@ -1022,27 +1387,54 @@ export const AirlineProvider: React.FC<{ children: React.ReactNode }> = ({ child
           } : undefined
         }
       };
-    }));
+    };
 
-    // If severe, also auto-update affected customer bookings
+    setFlights(prev => prev.map(transformFlightWeather));
+
+    // Also update selectedFlight if the user is currently in the booking flow!
+    if (selectedFlight && (selectedFlight.origin.code.toUpperCase() === airportCode.toUpperCase() || selectedFlight.destination.code.toUpperCase() === airportCode.toUpperCase())) {
+      setSelectedFlight(transformFlightWeather(selectedFlight));
+    }
+
+    // If severe, also auto-update affected customer bookings (AND currentBookingSuccess!)
     if (isSevere) {
       let totalRefundedAmount = 0;
       let affectedFlightNum = '';
 
       setBookings(prev => prev.map(b => {
-        if ((b.flight.origin.code === airportCode || b.flight.destination.code === airportCode) && b.status !== 'Cancelled') {
+        if (
+          b.flight.origin.code.toUpperCase() === airportCode.toUpperCase() ||
+          b.flight.destination.code.toUpperCase() === airportCode.toUpperCase()
+        ) {
           totalRefundedAmount += b.priceBreakdown.finalTotal;
           affectedFlightNum = b.flight.flightNumber;
-          return {
+          const updatedBooking: Booking = {
             ...b,
+            flight: transformFlightWeather(b.flight),
             status: 'Cancelled',
-            cancellationReason: `AI Automated Doppler Alert: Flight ${b.flight.flightNumber} grounded due to ${weatherType} at ${airportCode}. 100% Instant Full Refund or Free Rebooking Guaranteed.`,
+            cancellationReason: `AI Automated Doppler Alert: Flight ${b.flight.flightNumber} grounded due to ${weatherType} at ${airportCode}. Ticket Auto-Cancelled with 100% Instant Full Refund (₹${b.priceBreakdown.finalTotal.toLocaleString()}).`,
             refundAmount: b.priceBreakdown.finalTotal,
             refundStatus: 'Processed',
           };
+          return updatedBooking;
         }
         return b;
       }));
+
+      // Ensure active confirmation page immediately updates with cancellation status
+      if (currentBookingSuccess && (
+        currentBookingSuccess.flight.origin.code.toUpperCase() === airportCode.toUpperCase() ||
+        currentBookingSuccess.flight.destination.code.toUpperCase() === airportCode.toUpperCase()
+      )) {
+        setCurrentBookingSuccess(prev => prev ? {
+          ...prev,
+          flight: transformFlightWeather(prev.flight),
+          status: 'Cancelled',
+          cancellationReason: `AI Automated Doppler Alert: Flight ${prev.flight.flightNumber} grounded due to ${weatherType} at ${airportCode}. Ticket Auto-Cancelled with 100% Instant Full Refund (₹${prev.priceBreakdown.finalTotal.toLocaleString()}).`,
+          refundAmount: prev.priceBreakdown.finalTotal,
+          refundStatus: 'Processed'
+        } : null);
+      }
 
       // Speak aloud through AI Voice Synthesizer
       aiVoice.announceWeatherAutoCancellation(
@@ -1052,59 +1444,161 @@ export const AirlineProvider: React.FC<{ children: React.ReactNode }> = ({ child
         airportCode
       );
 
-      addToast(`🚨 AI Disruption Center: Severe ${weatherType} at ${airportCode}. Auto-cancelled ${autoCancelledCount} flights to protect passenger safety. Instant 100% Refund / Rebooking active.`, 'error');
+      addToast(`🚨 AI Weather Protection: Severe ${weatherType} at ${airportCode}. Auto-cancelled affected flights & tickets with 100% Instant Full Refund!`, 'error');
     } else {
-      addToast(`🌦️ AI Weather Center: Updated conditions for ${airportCode} to ${weatherType} (${severityLevel}).`, 'info');
+      addToast(`🌦️ AI Weather Center: Updated conditions for ${airportCode} to ${weatherType} (${effectiveSeverity}).`, 'info');
     }
   };
 
   // Direct AI Auto-Cancellation for a single flight
   const aiAutoCancelFlight = (flightId: string, customReason?: string) => {
-    const flight = flights.find(f => f.id === flightId);
+    const flight = flights.find(f => f.id === flightId) || selectedFlight || currentBookingSuccess?.flight;
     if (!flight) return;
 
-    const reason = customReason || `AI Automated Weather Alert: Critical crosswinds & severe storm detected along flight corridor.`;
+    const reason = customReason || `AI Automated Weather Alert: Critical crosswinds & severe storm detected along flight corridor (${flight.origin.code} ➔ ${flight.destination.code}).`;
 
-    setFlights(prev => prev.map(f => {
-      if (f.id === flightId) {
-        return {
-          ...f,
-          status: 'Cancelled',
-          weather: {
-            ...f.weather,
-            condition: 'Typhoon / Cyclone',
-            aiRiskScore: 98,
-            aiCancellationRisk: 'Critical - Auto Cancelled',
-            isAiAutoCancelled: true,
-            aiAutoCancelReason: reason,
-            compensationOffered: {
-              freeReschedule: true,
-              fullRefund: true,
-              mealVoucher: true,
-              hotelStay: true
-            }
-          }
-        };
+    setAirportWeatherOverride(flight.origin.code, 'Typhoon / Cyclone', 'severe');
+
+    const cancelFlightObj = (f: Flight): Flight => ({
+      ...f,
+      status: 'Cancelled',
+      weather: {
+        ...f.weather,
+        condition: 'Typhoon / Cyclone',
+        aiRiskScore: 98,
+        aiCancellationRisk: 'Critical - Auto Cancelled',
+        isAiAutoCancelled: true,
+        aiAutoCancelReason: reason,
+        compensationOffered: {
+          freeReschedule: true,
+          fullRefund: true,
+          mealVoucher: true,
+          hotelStay: true
+        }
       }
-      return f;
-    }));
+    });
 
-    // Update customer bookings
+    setFlights(prev => prev.map(f => f.id === flightId ? cancelFlightObj(f) : f));
+
+    if (selectedFlight && selectedFlight.id === flightId) {
+      setSelectedFlight(cancelFlightObj(selectedFlight));
+    }
+
+    // Update customer bookings and currentBookingSuccess
     setBookings(prev => prev.map(b => {
-      if (b.flightId === flightId && b.status !== 'Cancelled') {
-        return {
+      if (b.flightId === flightId || b.flight.flightNumber === flight.flightNumber) {
+        const updatedBooking: Booking = {
           ...b,
+          flight: cancelFlightObj(b.flight),
           status: 'Cancelled',
           cancellationReason: reason,
           refundAmount: b.priceBreakdown.finalTotal,
           refundStatus: 'Processed'
         };
+        if (currentBookingSuccess && currentBookingSuccess.pnr === b.pnr) {
+          setCurrentBookingSuccess(updatedBooking);
+        }
+        return updatedBooking;
       }
       return b;
     }));
 
-    addToast(`🛡️ AI Safety Protocol: Flight ${flight.flightNumber} automatically cancelled due to severe weather. Passengers notified with 100% Instant Refund/Rebooking.`, 'error');
+    addToast(`🛡️ AI Safety Protocol: Flight ${flight.flightNumber} & associated tickets automatically cancelled due to severe weather. 100% Instant Refund credited!`, 'error');
   };
+
+  // Autonomous Zero-Human Ticket Cancellation Watchdog
+  const checkAndAutoCancelWeatherDisruptedBookings = () => {
+    let cancelledCount = 0;
+    setBookings(prev => {
+      let changed = false;
+      const updatedList = prev.map(b => {
+        if (b.status === 'Confirmed') {
+          const origSafety = isAirportWeatherUnsafe(b.flight.origin.code);
+          const destSafety = isAirportWeatherUnsafe(b.flight.destination.code);
+          if (origSafety.unsafe || destSafety.unsafe) {
+            cancelledCount++;
+            changed = true;
+            const hazardousAirport = origSafety.unsafe ? b.flight.origin : b.flight.destination;
+            const condition = origSafety.unsafe ? origSafety.condition : destSafety.condition;
+            const fullRefund = b.priceBreakdown.finalTotal;
+
+            // Dispatch Real-time SMS & Email for Zero-Human Cancellation
+            airlineDB.addSms({
+              phoneNumber: b.contactPhone,
+              type: 'REFUND',
+              title: '⚡ 100% Weather Refund Disbursed (Zero-Human Intervention)',
+              body: `AeroWings Autonomous Weather Watchdog: Flight ${b.flight.flightNumber} (PNR: ${b.pnr}) cancelled automatically due to ${condition} at ${hazardousAirport.city} (${hazardousAirport.code}). 100% Instant Refund of ₹${fullRefund.toLocaleString()} credited back to your account without human intervention.`,
+              pnr: b.pnr
+            });
+
+            airlineDB.addEmail({
+              recipientEmail: b.contactEmail,
+              sender: 'disruptions@aerowings.airline.com',
+              subject: `Autonomous Cancellation & 100% Instant Refund • PNR ${b.pnr}`,
+              previewText: `Flight ${b.flight.flightNumber} cancelled automatically due to severe weather. Full ₹${fullRefund.toLocaleString()} refund processed without human intervention.`,
+              pnr: b.pnr,
+              type: 'REFUND_RECEIPT'
+            });
+
+            aiVoice.announceWeatherAutoCancellation(
+              b.flight.flightNumber,
+              fullRefund,
+              condition,
+              hazardousAirport.code
+            );
+
+            const autoCancelledBooking = {
+              ...b,
+              status: 'Cancelled' as FlightStatus,
+              cancellationReason: `AI Automated Doppler Alert: Flight ${b.flight.flightNumber} grounded due to hazardous ${condition} at ${hazardousAirport.city} (${hazardousAirport.code}). Ticket Auto-Cancelled with 100% Instant Full Refund (₹${fullRefund.toLocaleString()}) without human intervention.`,
+              refundAmount: fullRefund,
+              refundStatus: 'Processed' as const
+            };
+
+            setCurrentBookingSuccess(prevSuccess => {
+              if (prevSuccess && prevSuccess.pnr === b.pnr) {
+                return autoCancelledBooking;
+              }
+              return prevSuccess;
+            });
+
+            return autoCancelledBooking;
+          }
+        }
+        return b;
+      });
+
+      if (changed) {
+        airlineDB.saveBookings(updatedList);
+      }
+      return updatedList;
+    });
+
+    if (cancelledCount > 0) {
+      addToast(`🚨 AI Watchdog: Auto-cancelled ${cancelledCount} ticket(s) due to hazardous weather without human intervention. 100% full refund disbursed!`, 'error');
+    }
+  };
+
+  // Run autonomous watchdog every 20 seconds and on weather changes
+  useEffect(() => {
+    const handleWeatherUpdate = () => {
+      checkAndAutoCancelWeatherDisruptedBookings();
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('aerowings_weather_updated', handleWeatherUpdate);
+    }
+    const interval = setInterval(() => {
+      checkAndAutoCancelWeatherDisruptedBookings();
+    }, 20000);
+
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('aerowings_weather_updated', handleWeatherUpdate);
+      }
+      clearInterval(interval);
+    };
+  }, []);
 
   // Web Check-in
   const checkInBooking = (pnr: string) => {
@@ -1363,10 +1857,15 @@ export const AirlineProvider: React.FC<{ children: React.ReactNode }> = ({ child
         hasPriorityBoarding,
         setHasPriorityBoarding,
         appliedOffer,
+        promoCode: appliedOffer?.code || null,
+        discountAmount: calculateFareBreakdown().couponDiscount,
         applyPromoCode,
         removePromoCode,
+        verifiedBookingPhone,
+        setVerifiedBookingPhone,
         calculateFareBreakdown,
         completeBooking,
+        executeVoiceBooking,
         currentBookingSuccess,
         setCurrentBookingSuccess,
         bookings,
@@ -1374,6 +1873,7 @@ export const AirlineProvider: React.FC<{ children: React.ReactNode }> = ({ child
         instantWeatherRefund,
         instantWeatherRebook,
         triggerWeatherDisruption,
+        checkAndAutoCancelWeatherDisruptedBookings,
         aiAutoCancelFlight,
         checkInBooking,
         getBookingByPNR,
@@ -1398,6 +1898,19 @@ export const AirlineProvider: React.FC<{ children: React.ReactNode }> = ({ child
         markNotificationRead,
         markAllNotificationsRead,
         clearNotifications,
+        isVoiceModeActive,
+        toggleVoiceMode,
+        setVoiceMode,
+        multiCitySegments,
+        setMultiCitySegments,
+        hasGstNumber,
+        setHasGstNumber,
+        gstin,
+        setGstin,
+        companyName,
+        setCompanyName,
+        hasPriceDropProtection,
+        setHasPriceDropProtection,
       }}
     >
       {children}

@@ -53,7 +53,7 @@ export const BookingStepBar: React.FC<BookingStepBarProps> = ({
     if (voiceText) {
       aiVoice.speak(voiceText);
     } else {
-      aiVoice.speak(`Step ${currentStep} of 5: ${stepTitle}. Please complete the required details to continue your reservation.`);
+      aiVoice.speakLocalizedStep(currentStep, stepTitle);
     }
   };
 

@@ -92,9 +92,9 @@ export const AboutUsPage: React.FC = () => {
       </section>
 
       {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-12 space-y-16">
+      <div id="company-section" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-12 space-y-16">
         {/* SECTION 1: MODERN FLEET PROFILE */}
-        <section>
+        <section id="fleet-section">
           <div className="text-center max-w-3xl mx-auto mb-10">
             <h2 className="text-2xl sm:text-3xl font-bold text-white mb-2">Our Modern Fleet</h2>
             <p className="text-slate-300 text-sm">
@@ -142,7 +142,7 @@ export const AboutUsPage: React.FC = () => {
         </section>
 
         {/* SECTION 2: SUSTAINABILITY & NET ZERO */}
-        <section className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-10 shadow-2xl">
+        <section id="sustainability-section" className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-10 shadow-2xl">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
             <div>
               <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 text-emerald-400 text-xs font-semibold rounded-full mb-3 border border-emerald-500/30">
@@ -190,7 +190,7 @@ export const AboutUsPage: React.FC = () => {
         </section>
 
         {/* SECTION 3: SAFETY & GLOBAL ACCREDITATIONS */}
-        <section>
+        <section id="safety-section">
           <div className="text-center max-w-3xl mx-auto mb-10">
             <h2 className="text-2xl sm:text-3xl font-bold text-white mb-2">Safety, Quality & Accreditations</h2>
             <p className="text-slate-300 text-sm">

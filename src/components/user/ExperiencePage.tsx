@@ -22,6 +22,24 @@ export const ExperiencePage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'cabins' | 'dining' | 'entertainment' | 'lounges'>('cabins');
   const [selectedCabin, setSelectedCabin] = useState<'first' | 'business' | 'premium' | 'economy'>('business');
 
+  React.useEffect(() => {
+    const handleTabSwitch = (e?: any) => {
+      const storedTab = e?.detail?.tab || sessionStorage.getItem('aerowings_experience_tab');
+      const storedCabin = e?.detail?.cabin || sessionStorage.getItem('aerowings_experience_cabin');
+      if (storedTab) {
+        setActiveTab(storedTab as any);
+        sessionStorage.removeItem('aerowings_experience_tab');
+      }
+      if (storedCabin) {
+        setSelectedCabin(storedCabin as any);
+        sessionStorage.removeItem('aerowings_experience_cabin');
+      }
+    };
+    handleTabSwitch();
+    window.addEventListener('aerowings_switch_experience_tab', handleTabSwitch);
+    return () => window.removeEventListener('aerowings_switch_experience_tab', handleTabSwitch);
+  }, []);
+
   const handleBookCabin = (cabinClass: 'economy' | 'premium_economy' | 'business' | 'first') => {
     setUserView('home');
   };

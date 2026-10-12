@@ -122,13 +122,82 @@ export const AIRPORTS: Airport[] = [
   { code: 'AKL', name: 'Auckland Airport', city: 'Auckland', state: 'Auckland', country: 'New Zealand', terminal: 'Intl', isInternational: true },
   { code: 'JNB', name: 'O.R. Tambo International Airport', city: 'Johannesburg', state: 'Gauteng', country: 'South Africa', terminal: 'A', isInternational: true },
   { code: 'NBO', name: 'Jomo Kenyatta International Airport', city: 'Nairobi', state: 'Nairobi', country: 'Kenya', terminal: 'T1', isInternational: true },
-  { code: 'CAI', name: 'Cairo International Airport', city: 'Cairo', state: 'Cairo', country: 'Egypt', terminal: 'T3', isInternational: true }
+  { code: 'CAI', name: 'Cairo International Airport', city: 'Cairo', state: 'Cairo', country: 'Egypt', terminal: 'T3', isInternational: true },
+  // Additional India Domestic & Island Hubs
+  { code: 'IXR', name: 'Birsa Munda Airport', city: 'Ranchi', state: 'Jharkhand', country: 'India', terminal: 'T1', isInternational: false },
+  { code: 'RPR', name: 'Swami Vivekananda Airport', city: 'Raipur', state: 'Chhattisgarh', country: 'India', terminal: 'T1', isInternational: false },
+  { code: 'IXZ', name: 'Veer Savarkar International Airport', city: 'Port Blair (Andaman)', state: 'Andaman & Nicobar', country: 'India', terminal: 'T1', isInternational: false },
+  { code: 'IXL', name: 'Kushok Bakula Rimpochee Airport', city: 'Leh (Ladakh)', state: 'Ladakh', country: 'India', terminal: 'T1', isInternational: false },
+  { code: 'DED', name: 'Jolly Grant Airport', city: 'Dehradun', state: 'Uttarakhand', country: 'India', terminal: 'T1', isInternational: false },
+  { code: 'IMF', name: 'Bir Tikendrajit International Airport', city: 'Imphal', state: 'Manipur', country: 'India', terminal: 'T1', isInternational: false },
+  { code: 'IXA', name: 'Maharaja Bir Bikram Airport', city: 'Agartala', state: 'Tripura', country: 'India', terminal: 'T1', isInternational: false },
+  // Additional Global International Hubs from India
+  { code: 'CMB', name: 'Bandaranaike International Airport', city: 'Colombo', state: 'Western', country: 'Sri Lanka', terminal: 'T1', isInternational: true },
+  { code: 'KTM', name: 'Tribhuvan International Airport', city: 'Kathmandu', state: 'Bagmati', country: 'Nepal', terminal: 'Intl', isInternational: true },
+  { code: 'DAC', name: 'Hazrat Shahjalal International Airport', city: 'Dhaka', state: 'Dhaka', country: 'Bangladesh', terminal: 'T2', isInternational: true },
+  { code: 'MLE', name: 'Velana International Airport', city: 'Malé (Maldives)', state: 'Kaafu', country: 'Maldives', terminal: 'Intl', isInternational: true },
+  { code: 'MRU', name: 'Sir Seewoosagur Ramgoolam International', city: 'Mauritius', state: 'Plaines Wilhems', country: 'Mauritius', terminal: 'Main', isInternational: true },
+  { code: 'SEZ', name: 'Seychelles International Airport', city: 'Mahé (Seychelles)', state: 'Pointe La Rue', country: 'Seychelles', terminal: 'Intl', isInternational: true },
+  { code: 'SHJ', name: 'Sharjah International Airport', city: 'Sharjah', state: 'Sharjah', country: 'UAE', terminal: 'T1', isInternational: true },
+  { code: 'BAH', name: 'Bahrain International Airport', city: 'Manama', state: 'Muharraq', country: 'Bahrain', terminal: 'Main', isInternational: true },
+  { code: 'DMM', name: 'King Fahd International Airport', city: 'Dammam', state: 'Eastern Province', country: 'Saudi Arabia', terminal: 'Main', isInternational: true },
+  { code: 'ATH', name: 'Athens International Airport', city: 'Athens', state: 'Attica', country: 'Greece', terminal: 'A', isInternational: true },
+  { code: 'CPH', name: 'Copenhagen Airport', city: 'Copenhagen', state: 'Capital Region', country: 'Denmark', terminal: 'T3', isInternational: true },
+  { code: 'ARN', name: 'Stockholm Arlanda Airport', city: 'Stockholm', state: 'Stockholm', country: 'Sweden', terminal: 'T5', isInternational: true },
+  { code: 'BRU', name: 'Brussels Airport', city: 'Brussels', state: 'Flemish Brabant', country: 'Belgium', terminal: 'A', isInternational: true },
+  { code: 'LIS', name: 'Humberto Delgado Airport', city: 'Lisbon', state: 'Lisbon', country: 'Portugal', terminal: 'T1', isInternational: true },
+  { code: 'PRG', name: 'Václav Havel Airport Prague', city: 'Prague', state: 'Prague', country: 'Czech Republic', terminal: 'T1', isInternational: true },
+  { code: 'WAW', name: 'Warsaw Chopin Airport', city: 'Warsaw', state: 'Masovian', country: 'Poland', terminal: 'A', isInternational: true },
+  { code: 'MNL', name: 'Ninoy Aquino International Airport', city: 'Manila', state: 'Metro Manila', country: 'Philippines', terminal: 'T3', isInternational: true },
+  { code: 'HAN', name: 'Noi Bai International Airport', city: 'Hanoi', state: 'Hanoi', country: 'Vietnam', terminal: 'T2', isInternational: true },
+  { code: 'SGN', name: 'Tan Son Nhat International Airport', city: 'Ho Chi Minh City', state: 'South', country: 'Vietnam', terminal: 'T2', isInternational: true },
+  { code: 'TPE', name: 'Taiwan Taoyuan International Airport', city: 'Taipei', state: 'Taoyuan', country: 'Taiwan', terminal: 'T2', isInternational: true },
+  { code: 'PVG', name: 'Shanghai Pudong International Airport', city: 'Shanghai', state: 'Shanghai', country: 'China', terminal: 'T2', isInternational: true },
+  { code: 'PER', name: 'Perth Airport', city: 'Perth', state: 'Western Australia', country: 'Australia', terminal: 'T1', isInternational: true },
+  { code: 'IAD', name: 'Washington Dulles International Airport', city: 'Washington D.C.', state: 'Virginia', country: 'United States', terminal: 'Main', isInternational: true },
+  { code: 'MIA', name: 'Miami International Airport', city: 'Miami', state: 'Florida', country: 'United States', terminal: 'N', isInternational: true },
+  { code: 'IAH', name: 'George Bush Intercontinental Airport', city: 'Houston', state: 'Texas', country: 'United States', terminal: 'E', isInternational: true }
 ];
+
+/**
+ * Dynamically registers ANY city or destination on Earth into AIRPORTS at runtime
+ * so if a user wants to fly from India to ANYWHERE on Earth, a live airport & flight corridor is created immediately!
+ */
+export function registerCustomAirport(cityOrCode: string, countryName = 'International Destination'): Airport {
+  const cleaned = cityOrCode.trim();
+  const existing = AIRPORTS.find(
+    a => a.code.toLowerCase() === cleaned.toLowerCase() || a.city.toLowerCase() === cleaned.toLowerCase()
+  );
+  if (existing) return existing;
+
+  const alphaOnly = cleaned.replace(/[^A-Za-z]/g, '').toUpperCase();
+  const generatedCode = (alphaOnly.slice(0, 3) || 'GLB').padEnd(3, 'X');
+  // Ensure unique code
+  let finalCode = generatedCode;
+  let counter = 1;
+  while (AIRPORTS.some(a => a.code === finalCode)) {
+    finalCode = `${generatedCode.slice(0, 2)}${counter}`;
+    counter++;
+  }
+
+  const formattedCity = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+  const newAirport: Airport = {
+    code: finalCode,
+    name: `${formattedCity} International Airport`,
+    city: formattedCity,
+    state: formattedCity,
+    country: countryName,
+    terminal: 'T1',
+    isInternational: countryName.toLowerCase() !== 'india'
+  };
+  AIRPORTS.push(newAirport);
+  return newAirport;
+}
 
 // Quick airport lookup helper
 const getAirport = (code: string): Airport => {
   const found = AIRPORTS.find(a => a.code === code);
-  if (!found) throw new Error(`Airport not found: ${code}`);
+  if (!found) return registerCustomAirport(code);
   return found;
 };
 
@@ -1723,7 +1792,7 @@ export const INITIAL_FLIGHTS: Flight[] = [
     terminal: 'T3',
     weather: {
       condition: 'Clear',
-      temperatureC: 22,
+      temperatureC: 25,
       visibilityKm: 10,
       windSpeedKmh: 14,
       stormIndex: 5,

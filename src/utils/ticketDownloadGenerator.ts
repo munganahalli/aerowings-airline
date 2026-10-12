@@ -414,6 +414,20 @@ export function generateCompleteTicketHtml(booking: Booking, targetPax: Passenge
       pax.visaNumber ? `Visa: <strong>${pax.visaNumber} (${pax.visaStatus || 'Valid'})</strong>` : null
     ].filter(Boolean).join(' &bull; ') || 'Verified at Gate';
 
+    const originUrl = typeof window !== 'undefined' ? window.location.origin : 'https://aerowings.airline.com';
+    const assignedSeat = pax.seatNumber || `12${String.fromCharCode(65 + idx)}`;
+    const qrTextPayload = [
+      `AEROWINGS OFFICIAL E-TICKET`,
+      `PNR: ${booking.pnr} (${booking.status.toUpperCase()})`,
+      `PASSENGER: ${pax.title} ${pax.firstName} ${pax.lastName}`,
+      `FLIGHT: ${flight.airlineCode || 'AW'}-${flight.flightNumber} (${flight.origin.code} -> ${flight.destination.code})`,
+      `DATE: ${booking.departureDate} | DEP: ${flight.departureTime}`,
+      `SEAT: ${assignedSeat} | GATE: ${flight.gate || '22A'} | CLASS: ${booking.cabinClass.toUpperCase()}`,
+      `PAID: INR ${booking.priceBreakdown.finalTotal.toLocaleString()}`
+    ].join('\n');
+    const verifyUrl = `${originUrl}/?verifyPnr=${encodeURIComponent(booking.pnr)}&pax=${encodeURIComponent(`${pax.title} ${pax.firstName} ${pax.lastName}`)}&flight=${encodeURIComponent(`${flight.airlineCode || 'AW'}-${flight.flightNumber}`)}&from=${encodeURIComponent(flight.origin.code)}&fromCity=${encodeURIComponent(flight.origin.city)}&to=${encodeURIComponent(flight.destination.code)}&toCity=${encodeURIComponent(flight.destination.city)}&date=${encodeURIComponent(booking.departureDate)}&time=${encodeURIComponent(flight.departureTime)}&seat=${encodeURIComponent(assignedSeat)}&gate=${encodeURIComponent(flight.gate || '22A')}&class=${encodeURIComponent(booking.cabinClass.toUpperCase())}&status=${encodeURIComponent(booking.status)}&paid=${encodeURIComponent(String(booking.priceBreakdown.finalTotal))}`;
+    const qrImgUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&ecc=M&margin=8&data=${encodeURIComponent(qrTextPayload)}`;
+
     return `
     <div style="background: white; border: 2px solid #0284c7; border-radius: 12px; margin-bottom: 24px; padding: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); page-break-inside: avoid;">
       <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; padding-bottom: 12px; margin-bottom: 12px;">
@@ -423,23 +437,32 @@ export function generateCompleteTicketHtml(booking: Booking, targetPax: Passenge
         </div>
         <div style="text-align: right;">
           <span style="font-size: 12px; color: #64748b;">ASSIGNED SEAT</span>
-          <div style="font-size: 22px; font-weight: 900; color: #0284c7;">${pax.seatNumber || `12${String.fromCharCode(65 + idx)}`}</div>
+          <div style="font-size: 22px; font-weight: 900; color: #0284c7;">${assignedSeat}</div>
         </div>
       </div>
 
-      <div style="background: #f8fafc; padding: 10px 14px; border-radius: 8px; font-size: 12px; color: #334155; margin-bottom: 14px;">
-        🛡️ <strong>Identity Verification:</strong> ${docVerifications}
-      </div>
+      <div style="display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap;">
+        <div style="flex: 1; min-width: 240px;">
+          <div style="background: #f8fafc; padding: 10px 14px; border-radius: 8px; font-size: 12px; color: #334155; margin-bottom: 14px;">
+            🛡️ <strong>Identity Verification:</strong> ${docVerifications}
+          </div>
 
-      <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; font-size: 12px; border-bottom: 1px dashed #cbd5e1; padding-bottom: 14px;">
-        <div><span style="color: #64748b;">FLIGHT</span><br><strong>${flight.airlineCode || 'AW'} ${flight.flightNumber}</strong></div>
-        <div><span style="color: #64748b;">BOARDING GATE</span><br><strong>${flight.gate || '22A'}</strong></div>
-        <div><span style="color: #64748b;">BOARDING TIME</span><br><strong style="color: #dc2626;">45m Before Dep</strong></div>
-        <div><span style="color: #64748b;">FREE BAGGAGE</span><br><strong>7kg Cabin + 15kg Luggage</strong></div>
+          <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; font-size: 12px; border-bottom: 1px dashed #cbd5e1; padding-bottom: 14px;">
+            <div><span style="color: #64748b;">FLIGHT</span><br><strong>${flight.airlineCode || 'AW'} ${flight.flightNumber}</strong></div>
+            <div><span style="color: #64748b;">BOARDING GATE</span><br><strong>${flight.gate || '22A'}</strong></div>
+            <div><span style="color: #64748b;">BOARDING TIME</span><br><strong style="color: #dc2626;">45m Before Dep</strong></div>
+            <div><span style="color: #64748b;">FREE BAGGAGE</span><br><strong>7kg Cabin + 15kg Luggage</strong></div>
+          </div>
+        </div>
+
+        <div style="text-align: center; padding: 10px; border: 2px solid #e2e8f0; border-radius: 12px; background: #ffffff;">
+          <img src="${qrImgUrl}" alt="Boarding Pass QR Code" width="130" height="130" style="display: block; margin: 0 auto;" />
+          <div style="font-size: 10px; font-weight: bold; color: #0284c7; margin-top: 4px; font-family: monospace;">SCAN TO VERIFY PASS</div>
+        </div>
       </div>
 
       <div style="background: #0f172a; color: white; text-align: center; font-family: monospace; padding: 8px; font-size: 12px; letter-spacing: 3px; margin-top: 14px; border-radius: 6px;">
-        *AW-${booking.pnr}-${flight.flightNumber}-${pax.seatNumber || '12A'}-${idx + 1}*
+        *AW-${booking.pnr}-${flight.flightNumber}-${assignedSeat}-${idx + 1}*
       </div>
     </div>
     `;

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAirline } from '../../context/AirlineContext';
 import { 
   CloudRain, 
@@ -19,12 +19,26 @@ import {
   ArrowRight,
   RefreshCw,
   Volume2,
-  Info
+  Info,
+  Radio,
+  Check,
+  Compass,
+  Gauge,
+  Search,
+  Globe
 } from 'lucide-react';
 import { AIRPORTS } from '../../data/mockData';
 import { formatCurrency } from '../../utils/airlineUtils';
 import { aiVoice } from '../../utils/aiVoice';
 import { RealtimeAirportWeatherWidget } from '../common/RealtimeAirportWeatherWidget';
+import { MeteorologicalWeatherReader } from '../common/MeteorologicalWeatherReader';
+import { 
+  getAirportWeatherImmediate, 
+  fetchLiveAirportWeather, 
+  fetchLiveWeatherByQuery,
+  RealtimeAirportWeather,
+  isAirportWeatherUnsafe
+} from '../../utils/realtimeWeather';
 
 export const WeatherDisruptionCenterPage: React.FC = () => {
   const { 
@@ -33,6 +47,8 @@ export const WeatherDisruptionCenterPage: React.FC = () => {
     triggerWeatherDisruption, 
     instantWeatherRefund, 
     instantWeatherRebook, 
+    checkAndAutoCancelWeatherDisruptedBookings,
+    executeVoiceBooking,
     currency, 
     addToast, 
     resetDefaultFlights 
@@ -41,26 +57,149 @@ export const WeatherDisruptionCenterPage: React.FC = () => {
   const [selectedAirportCode, setSelectedAirportCode] = useState<string>('CCU');
   const [selectedWeatherType, setSelectedWeatherType] = useState<'Clear' | 'Rain' | 'Dense Fog' | 'Heavy Thunderstorm' | 'Typhoon / Cyclone' | 'Blizzard'>('Typhoon / Cyclone');
   const [simulating, setSimulating] = useState<boolean>(false);
+  const [isRefreshingLive, setIsRefreshingLive] = useState<boolean>(false);
+  const [liveHubsWeather, setLiveHubsWeather] = useState<Record<string, RealtimeAirportWeather>>({});
+
+  // Route-Specific Live Weather Telemetry State
+  const [routeOrigin, setRouteOrigin] = useState<string>('DEL');
+  const [routeDest, setRouteDest] = useState<string>('BOM');
+  const [routeOriginWeather, setRouteOriginWeather] = useState<RealtimeAirportWeather | null>(null);
+  const [routeDestWeather, setRouteDestWeather] = useState<RealtimeAirportWeather | null>(null);
+  const [isLoadingRouteWeather, setIsLoadingRouteWeather] = useState<boolean>(false);
+
+  // Global Real-Time Weather Explorer state (All States & Countries Worldwide)
+  const [globalSearchQuery, setGlobalSearchQuery] = useState<string>('Delhi');
+  const [globalSearchResult, setGlobalSearchResult] = useState<RealtimeAirportWeather | null>(null);
+  const [isSearchingGlobal, setIsSearchingGlobal] = useState<boolean>(false);
+
+  const handleSearchGlobalWeather = async (queryToSearch: string) => {
+    const q = (queryToSearch || globalSearchQuery).trim();
+    if (!q) return;
+    setIsSearchingGlobal(true);
+    try {
+      const res = await fetchLiveWeatherByQuery(q);
+      if (res) {
+        setGlobalSearchResult(res);
+        addToast(`✅ Live Open-Meteo Weather for ${res.cityName}: ${res.temperatureC}°C, ${res.conditionText}`, 'success');
+      } else {
+        addToast(`Could not retrieve weather for "${q}". Please check the name.`, 'error');
+      }
+    } catch (e) {
+      console.warn('Global weather search error:', e);
+    } finally {
+      setIsSearchingGlobal(false);
+    }
+  };
 
   // Weather-affected / auto-cancelled flights
   const disruptedFlights = flights.filter(f => f.status === 'Cancelled' || f.weather?.aiCancellationRisk === 'Critical - Auto Cancelled' || f.status === 'Delayed');
   
   // Weather-affected customer bookings
   const affectedBookings = bookings.filter(b => 
-    b.status === 'Cancelled' && (b.cancellationReason?.toLowerCase().includes('weather') || b.cancellationReason?.toLowerCase().includes('cyclone') || b.cancellationReason?.toLowerCase().includes('ai'))
+    b.status === 'Cancelled' && (b.cancellationReason?.toLowerCase().includes('weather') || b.cancellationReason?.toLowerCase().includes('cyclone') || b.cancellationReason?.toLowerCase().includes('doppler') || b.cancellationReason?.toLowerCase().includes('grounding') || b.cancellationReason?.toLowerCase().includes('watchdog'))
   );
+
+  const activeConfirmedBookings = bookings.filter(b => b.status === 'Confirmed');
+
+  // Key hub airports to track in live radar grid
+  const keyHubCodes = ['DEL', 'BOM', 'BLR', 'MAA', 'CCU', 'HYD', 'GOI', 'JAI', 'DXB', 'LHR', 'SIN', 'JFK'];
+
+  // Load live real-time weather from Open-Meteo API for all hubs
+  const loadAllHubsLiveWeather = async (forceRefresh = false) => {
+    setIsRefreshingLive(true);
+    const updatedMap: Record<string, RealtimeAirportWeather> = {};
+    for (const code of keyHubCodes) {
+      try {
+        const live = await fetchLiveAirportWeather(code, forceRefresh);
+        updatedMap[code] = live;
+      } catch {
+        updatedMap[code] = getAirportWeatherImmediate(code);
+      }
+    }
+    setLiveHubsWeather(updatedMap);
+    setIsRefreshingLive(false);
+  };
+
+  // Load live weather for the selected flight route
+  const loadRouteWeather = async (orig: string, dest: string) => {
+    setIsLoadingRouteWeather(true);
+    try {
+      const [origW, destW] = await Promise.all([
+        fetchLiveAirportWeather(orig, true),
+        fetchLiveAirportWeather(dest, true)
+      ]);
+      setRouteOriginWeather(origW);
+      setRouteDestWeather(destW);
+    } catch {
+      setRouteOriginWeather(getAirportWeatherImmediate(orig));
+      setRouteDestWeather(getAirportWeatherImmediate(dest));
+    } finally {
+      setIsLoadingRouteWeather(false);
+    }
+  };
+
+  useEffect(() => {
+    loadAllHubsLiveWeather(true);
+    loadRouteWeather(routeOrigin, routeDest);
+    handleSearchGlobalWeather('Delhi');
+
+    const handleWeatherUpdate = () => {
+      loadAllHubsLiveWeather(false);
+      loadRouteWeather(routeOrigin, routeDest);
+    };
+
+    window.addEventListener('aerowings_weather_updated', handleWeatherUpdate);
+    return () => window.removeEventListener('aerowings_weather_updated', handleWeatherUpdate);
+  }, []);
 
   const handleSimulateDisruption = (airport: string, condition: any, severity: 'normal' | 'moderate' | 'severe') => {
     setSimulating(true);
     setTimeout(() => {
       triggerWeatherDisruption(airport, condition, severity);
       setSimulating(false);
-    }, 600);
+      // Automatically check and cancel affected bookings without human intervention
+      setTimeout(() => {
+        checkAndAutoCancelWeatherDisruptedBookings();
+      }, 400);
+    }, 500);
   };
 
   const handleQuickReset = () => {
     resetDefaultFlights();
+    loadAllHubsLiveWeather(true);
+    loadRouteWeather(routeOrigin, routeDest);
     addToast('All airport weather conditions restored to Clear Skies.', 'info');
+  };
+
+  // Test zero-human auto-cancellation on booked flight
+  const handleTestZeroHumanCancellation = (targetAirportCode: string, flightNumber: string) => {
+    addToast(`⚡ Triggering severe storm at ${targetAirportCode} to verify Autonomous Zero-Human Cancellation...`, 'info');
+    triggerWeatherDisruption(targetAirportCode, 'Typhoon / Cyclone', 'severe');
+    setTimeout(() => {
+      checkAndAutoCancelWeatherDisruptedBookings();
+      loadAllHubsLiveWeather(false);
+    }, 400);
+  };
+
+  // Demo auto-booking creation if user has no booked flights yet
+  const handleCreateDemoBookingAndCancel = async () => {
+    addToast('Creating quick flight booking to demonstrate zero-human cancellation...', 'info');
+    try {
+      const demoBooking = await executeVoiceBooking({
+        origin: 'DEL',
+        destination: 'BOM',
+        passengerName: 'Rohit Verma',
+        recipientPhone: '9876543210',
+        seatClass: 'Economy',
+        totalPriceINR: 4850
+      });
+      addToast(`Booking confirmed for PNR ${demoBooking.pnr}. Now initiating severe weather watchdog...`, 'info');
+      setTimeout(() => {
+        handleTestZeroHumanCancellation('DEL', demoBooking.flight.flightNumber);
+      }, 1000);
+    } catch {
+      handleTestZeroHumanCancellation('DEL', 'AW-302');
+    }
   };
 
   return (
@@ -70,16 +209,454 @@ export const WeatherDisruptionCenterPage: React.FC = () => {
         {/* Page Header */}
         <div className="text-center space-y-3">
           <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-sky-500/10 border border-sky-500/25 text-sky-400 text-xs font-semibold">
-            <Sparkles className="w-4 h-4 animate-pulse" />
-            <span>AI Automated Doppler Weather Monitoring & Zero-Risk Protection Engine</span>
+            <Radio className="w-4 h-4 text-emerald-400 animate-pulse" />
+            <span>Real-Time Open-Meteo & Doppler Aviation Radar • Live API Active</span>
           </div>
           <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-white">
             Live AI Weather & Flight Disruption Operations
           </h1>
           <p className="text-slate-400 text-sm max-w-2xl mx-auto">
-            AeroWings AI continuously tracks global atmospheric conditions. If severe storms or crosswinds exceed safety thresholds, the AI auto-cancels flights to safeguard lives and instantly issues 100% full refunds or 1-click rebooking.
+            AeroWings AI continuously tracks live atmospheric telemetry across all domestic states & global airports via real-time Meteorological API feeds. If severe storms, cyclones, or low-visibility fog occurs, tickets are <span className="text-amber-400 font-semibold">automatically cancelled without human intervention</span> with 100% instant refunds.
           </p>
         </div>
+
+        {/* Autonomous Zero-Human Ticket Cancellation Watchdog Banner */}
+        <div className="bg-gradient-to-r from-slate-900 via-indigo-950/60 to-slate-900 border border-indigo-500/30 rounded-2xl p-6 shadow-2xl space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-indigo-500/20 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-500/40 flex items-center justify-center text-indigo-400 shrink-0">
+                <ShieldCheck className="w-6 h-6 text-emerald-400" />
+              </div>
+              <div>
+                <h2 className="text-base font-extrabold text-white flex items-center gap-2">
+                  <span>Autonomous Weather Protection Watchdog</span>
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-bold border border-emerald-500/30 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+                    ACTIVE (Continuous 20s Scan)
+                  </span>
+                </h2>
+                <p className="text-xs text-slate-300 mt-0.5">
+                  Guarantees that when weather conditions turn hazardous along your booked flight route, your ticket is cancelled <strong>automatically without any human handling</strong>, and 100% instant full refund is credited.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => checkAndAutoCancelWeatherDisruptedBookings()}
+                className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
+              >
+                <Zap className="w-3.5 h-3.5 text-amber-300" />
+                <span>Run Immediate AI Watchdog Scan</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Active Bookings Status & Zero-Human Verification Action */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-1">
+            <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1.5">
+              <div className="text-[11px] font-semibold text-slate-400">Active Booked Flights</div>
+              <div className="text-2xl font-black text-white">{activeConfirmedBookings.length}</div>
+              <p className="text-[11px] text-slate-500">Continuously monitored against Doppler storm & wind thresholds.</p>
+            </div>
+
+            <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1.5">
+              <div className="text-[11px] font-semibold text-slate-400">Auto-Cancelled & Refunded Tickets</div>
+              <div className="text-2xl font-black text-emerald-400">{affectedBookings.length}</div>
+              <p className="text-[11px] text-slate-500">100% full refunds credited with zero manual human effort.</p>
+            </div>
+
+            <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 flex flex-col justify-between">
+              <div className="text-[11px] font-semibold text-slate-400">Zero-Human Cancellation Test</div>
+              {activeConfirmedBookings.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => handleTestZeroHumanCancellation(activeConfirmedBookings[0].flight.origin.code, activeConfirmedBookings[0].flight.flightNumber)}
+                  className="mt-2 w-full py-2 px-3 rounded-lg bg-red-600/80 hover:bg-red-500 text-white text-xs font-bold transition-all shadow cursor-pointer text-center"
+                >
+                  ⚡ Test Auto-Cancel on {activeConfirmedBookings[0].flight.flightNumber}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleCreateDemoBookingAndCancel}
+                  className="mt-2 w-full py-2 px-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-all shadow cursor-pointer text-center"
+                >
+                  ⚡ Book Demo & Test Auto-Cancel
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Global Real-Time Weather Explorer (All States & Countries Worldwide) */}
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-5">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-4">
+            <div>
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/30 text-sky-300 text-[11px] font-bold uppercase tracking-wider mb-2">
+                <Globe className="w-3.5 h-3.5 text-sky-400" />
+                <span>Worldwide Meteorological API Grounding • Live Open-Meteo Feed</span>
+              </div>
+              <h2 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+                <Thermometer className="w-5 h-5 text-amber-400" />
+                <span>Global Real-Time Weather Explorer (All States & Countries)</span>
+              </h2>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Search any state, city, or country worldwide to fetch live, verifiable meteorological telemetry (exact temperature, wind, humidity, visibility, and flight safety index).
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-mono px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-emerald-400 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span>Open-Meteo API v1 Connected</span>
+              </span>
+            </div>
+          </div>
+
+          {/* Search Input Bar & Quick Shortcut Chips */}
+          <div className="space-y-3">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleSearchGlobalWeather(globalSearchQuery);
+              }}
+              className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2"
+            >
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="text"
+                  value={globalSearchQuery}
+                  onChange={(e) => setGlobalSearchQuery(e.target.value)}
+                  placeholder="Enter any state, city, or country (e.g., Delhi, Mumbai, Karnataka, Kashmir, California, London, Tokyo)..."
+                  className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-950 border border-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-xs text-white placeholder-slate-500 focus:outline-none font-medium"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={isSearchingGlobal}
+                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-sky-500 hover:from-blue-500 hover:to-sky-400 text-white text-xs font-bold transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isSearchingGlobal ? 'animate-spin' : ''}`} />
+                <span>{isSearchingGlobal ? 'Fetching Live API...' : 'Check Live Weather'}</span>
+              </button>
+            </form>
+
+            {/* Quick Location Pills */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
+              <span className="text-slate-500 text-[11px] font-semibold shrink-0">Quick States & Hubs:</span>
+              {[
+                { label: '🇮🇳 Delhi', q: 'Delhi' },
+                { label: '🇮🇳 Mumbai', q: 'Mumbai' },
+                { label: '🇮🇳 Bengaluru (Karnataka)', q: 'Bengaluru' },
+                { label: '🇮🇳 Chennai (Tamil Nadu)', q: 'Chennai' },
+                { label: '🇮🇳 Srinagar (Kashmir)', q: 'Srinagar' },
+                { label: '🇮🇳 Goa', q: 'Goa' },
+                { label: '🇮🇳 Kolkata (West Bengal)', q: 'Kolkata' },
+                { label: '🇦🇪 Dubai', q: 'Dubai' },
+                { label: '🇬🇧 London', q: 'London' },
+                { label: '🇺🇸 New York', q: 'New York' },
+                { label: '🇺🇸 California', q: 'San Francisco' },
+                { label: '🇯🇵 Tokyo', q: 'Tokyo' },
+                { label: '🇸🇬 Singapore', q: 'Singapore' },
+                { label: '🇫🇷 Paris', q: 'Paris' }
+              ].map((loc) => (
+                <button
+                  key={loc.q}
+                  type="button"
+                  onClick={() => {
+                    setGlobalSearchQuery(loc.q);
+                    handleSearchGlobalWeather(loc.q);
+                  }}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-medium whitespace-nowrap transition-colors cursor-pointer ${
+                    globalSearchQuery.toLowerCase() === loc.q.toLowerCase()
+                      ? 'bg-blue-600 text-white font-bold shadow-sm'
+                      : 'bg-slate-950 border border-slate-800 text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  {loc.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Result Card */}
+          {globalSearchResult && (
+            <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 shadow-inner space-y-4 animate-fadeIn">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-lg font-black text-white">{globalSearchResult.cityName}</h3>
+                    <span className="px-2 py-0.5 rounded-md bg-sky-500/20 text-sky-300 font-mono text-xs font-bold border border-sky-500/30">
+                      {globalSearchResult.airportCode}
+                    </span>
+                    <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${
+                      globalSearchResult.flightSafetyStatus === 'SEVERE_IFR'
+                        ? 'bg-red-500/20 text-red-400 border-red-500/30'
+                        : globalSearchResult.flightSafetyStatus === 'MODERATE_MVFR'
+                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                        : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                    }`}>
+                      {globalSearchResult.flightSafetyStatus === 'OPTIMAL_VFR' ? 'Optimal Flight Safety' : globalSearchResult.conditionText}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    {globalSearchResult.airportName} • Lat: {globalSearchResult.latitude.toFixed(4)}°, Lng: {globalSearchResult.longitude.toFixed(4)}° • Updated: {globalSearchResult.lastUpdated}
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      aiVoice.speak(
+                        `Live Open-Meteo weather update for ${globalSearchResult.cityName}. The current temperature is exactly ${globalSearchResult.temperatureC} degrees Celsius, ${globalSearchResult.conditionText}. Wind speed is ${globalSearchResult.windSpeedKmh} kilometers per hour, visibility is ${globalSearchResult.visibilityKm} kilometers. Flight safety is ${globalSearchResult.flightSafetyStatus}.`
+                      );
+                    }}
+                    className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-sky-400 hover:text-white transition-all cursor-pointer flex items-center gap-1.5 text-xs font-bold"
+                    title="Speak Weather Report Aloud"
+                  >
+                    <Volume2 className="w-4 h-4" />
+                    <span>Listen Live</span>
+                  </button>
+
+                  <div className="text-right">
+                    <div className="text-3xl sm:text-4xl font-black text-white">
+                      {globalSearchResult.temperatureC}°C
+                    </div>
+                    <div className="text-[11px] text-slate-400">
+                      {globalSearchResult.temperatureF}°F (Feels like {globalSearchResult.apparentTemperatureC}°C)
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Weather Telemetry Matrix */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 py-3 border-y border-slate-800/80 text-center">
+                <div className="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800">
+                  <div className="text-[11px] text-slate-400 flex items-center justify-center gap-1">
+                    <Wind className="w-3.5 h-3.5 text-sky-400" /> Wind Velocity
+                  </div>
+                  <div className="text-sm font-bold text-white mt-1">{globalSearchResult.windSpeedKmh} km/h</div>
+                  <div className="text-[10px] text-slate-500">{globalSearchResult.windDirectionDeg}° direction</div>
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800">
+                  <div className="text-[11px] text-slate-400 flex items-center justify-center gap-1">
+                    <Eye className="w-3.5 h-3.5 text-emerald-400" /> Visibility
+                  </div>
+                  <div className="text-sm font-bold text-white mt-1">{globalSearchResult.visibilityKm} km</div>
+                  <div className="text-[10px] text-slate-500">{globalSearchResult.visibilityKm >= 9 ? 'Unlimited VFR' : 'Restricted CAT-I'}</div>
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800">
+                  <div className="text-[11px] text-slate-400 flex items-center justify-center gap-1">
+                    <Gauge className="w-3.5 h-3.5 text-amber-400" /> Relative Humidity
+                  </div>
+                  <div className="text-sm font-bold text-white mt-1">{globalSearchResult.humidity}%</div>
+                  <div className="text-[10px] text-slate-500">Dew Point Synced</div>
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800">
+                  <div className="text-[11px] text-slate-400 flex items-center justify-center gap-1">
+                    <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" /> Safety Score
+                  </div>
+                  <div className="text-sm font-bold text-emerald-400 mt-1">{globalSearchResult.safetyScore} / 100</div>
+                  <div className="text-[10px] text-slate-500">Autonomous Watchdog</div>
+                </div>
+              </div>
+
+              {/* Advisory bar */}
+              <div className="p-3 rounded-xl bg-blue-950/40 border border-blue-500/20 flex items-center justify-between text-xs text-sky-200">
+                <span className="font-semibold">✈️ Aviation Advisory: {globalSearchResult.runwayAdvisory}</span>
+                <span className="font-mono text-[10px] text-slate-400">Open-Meteo Verified</span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Live Route Real-Time Weather API Telemetry Section */}
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-5">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-4">
+            <div>
+              <h2 className="text-base font-bold text-white flex items-center gap-2">
+                <Compass className="w-5 h-5 text-sky-400" />
+                <span>Live Flight Route Weather Telemetry (Open-Meteo API Feed)</span>
+              </h2>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Inspect real-time weather API metrics (exact live temperature, wind speed, precipitation, visibility) across any departure and arrival corridor.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => loadRouteWeather(routeOrigin, routeDest)}
+                disabled={isLoadingRouteWeather}
+                className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-750 text-slate-300 text-xs font-semibold border border-slate-700 flex items-center gap-1.5 transition-all cursor-pointer"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 text-sky-400 ${isLoadingRouteWeather ? 'animate-spin' : ''}`} />
+                <span>Fetch Live API Weather</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Route Selector Controls */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 items-end">
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-400 mb-1">Departure Origin Hub</label>
+              <select
+                value={routeOrigin}
+                onChange={(e) => {
+                  setRouteOrigin(e.target.value);
+                  loadRouteWeather(e.target.value, routeDest);
+                }}
+                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-semibold focus:outline-none focus:border-sky-500 cursor-pointer"
+              >
+                {AIRPORTS.map((a) => (
+                  <option key={`orig-${a.code}`} value={a.code}>
+                    {a.city} ({a.code}) - {a.country}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-400 mb-1">Arrival Destination Hub</label>
+              <select
+                value={routeDest}
+                onChange={(e) => {
+                  setRouteDest(e.target.value);
+                  loadRouteWeather(routeOrigin, e.target.value);
+                }}
+                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-semibold focus:outline-none focus:border-sky-500 cursor-pointer"
+              >
+                {AIRPORTS.map((a) => (
+                  <option key={`dest-${a.code}`} value={a.code}>
+                    {a.city} ({a.code}) - {a.country}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <button
+                type="button"
+                onClick={() => {
+                  const t = routeOrigin;
+                  setRouteOrigin(routeDest);
+                  setRouteDest(t);
+                  loadRouteWeather(routeDest, t);
+                }}
+                className="w-full py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <RotateCcw className="w-3.5 h-3.5 text-sky-400" />
+                <span>Swap Route Direction</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Live Telemetry Display for Both Airports */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+            {/* Origin Telemetry Card */}
+            <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="text-xs text-sky-400 font-bold uppercase tracking-wider">Departure Airport</div>
+                  <div className="text-lg font-black text-white">{routeOriginWeather?.cityName || routeOrigin} ({routeOrigin})</div>
+                  <div className="text-[11px] text-slate-400">{routeOriginWeather?.airportName}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-3xl font-extrabold text-white">
+                    {routeOriginWeather ? `${routeOriginWeather.temperatureC}°C` : '--'}
+                  </div>
+                  <div className="text-[11px] text-slate-400 font-medium">
+                    {routeOriginWeather?.conditionText || 'Syncing API...'}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 py-2.5 border-y border-slate-800/80 text-center text-xs">
+                <div>
+                  <div className="text-slate-400 text-[10px] flex items-center justify-center gap-1">
+                    <Wind className="w-3 h-3 text-sky-400" /> Wind
+                  </div>
+                  <div className="font-bold text-white mt-0.5">{routeOriginWeather?.windSpeedKmh ?? 12} km/h</div>
+                </div>
+                <div>
+                  <div className="text-slate-400 text-[10px] flex items-center justify-center gap-1">
+                    <Eye className="w-3 h-3 text-emerald-400" /> Visibility
+                  </div>
+                  <div className="font-bold text-white mt-0.5">{routeOriginWeather?.visibilityKm ?? 10} km</div>
+                </div>
+                <div>
+                  <div className="text-slate-400 text-[10px] flex items-center justify-center gap-1">
+                    <Gauge className="w-3 h-3 text-amber-400" /> Humidity
+                  </div>
+                  <div className="font-bold text-white mt-0.5">{routeOriginWeather?.humidity ?? 55}%</div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="text-slate-400">Flight Safety Status:</span>
+                <span className="font-bold text-emerald-400">{routeOriginWeather?.flightSafetyStatus ?? 'OPTIMAL_VFR'}</span>
+              </div>
+            </div>
+
+            {/* Destination Telemetry Card */}
+            <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="text-xs text-sky-400 font-bold uppercase tracking-wider">Arrival Destination</div>
+                  <div className="text-lg font-black text-white">{routeDestWeather?.cityName || routeDest} ({routeDest})</div>
+                  <div className="text-[11px] text-slate-400">{routeDestWeather?.airportName}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-3xl font-extrabold text-white">
+                    {routeDestWeather ? `${routeDestWeather.temperatureC}°C` : '--'}
+                  </div>
+                  <div className="text-[11px] text-slate-400 font-medium">
+                    {routeDestWeather?.conditionText || 'Syncing API...'}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 py-2.5 border-y border-slate-800/80 text-center text-xs">
+                <div>
+                  <div className="text-slate-400 text-[10px] flex items-center justify-center gap-1">
+                    <Wind className="w-3 h-3 text-sky-400" /> Wind
+                  </div>
+                  <div className="font-bold text-white mt-0.5">{routeDestWeather?.windSpeedKmh ?? 14} km/h</div>
+                </div>
+                <div>
+                  <div className="text-slate-400 text-[10px] flex items-center justify-center gap-1">
+                    <Eye className="w-3 h-3 text-emerald-400" /> Visibility
+                  </div>
+                  <div className="font-bold text-white mt-0.5">{routeDestWeather?.visibilityKm ?? 10} km</div>
+                </div>
+                <div>
+                  <div className="text-slate-400 text-[10px] flex items-center justify-center gap-1">
+                    <Gauge className="w-3 h-3 text-amber-400" /> Humidity
+                  </div>
+                  <div className="font-bold text-white mt-0.5">{routeDestWeather?.humidity ?? 60}%</div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="text-slate-400">Flight Safety Status:</span>
+                <span className="font-bold text-emerald-400">{routeDestWeather?.flightSafetyStatus ?? 'OPTIMAL_VFR'}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Real-Time Meteorological AI Weather Reader & API Predictor */}
+        <MeteorologicalWeatherReader
+          initialAirportCode="DEL"
+          title="AeroWings Flight Operations Meteorological AI Reader & Short-Term Predictor"
+        />
 
         {/* Live Weather Simulator Control Bar */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-5">
@@ -154,49 +731,96 @@ export const WeatherDisruptionCenterPage: React.FC = () => {
             </button>
           </div>
 
-          {/* Realtime Live Meteorological Weather Widget */}
-          <div className="pt-2">
-            <RealtimeAirportWeatherWidget
-              originCode={selectedAirportCode}
-              destinationCode="BOM"
-              showBoth={true}
-            />
+          {/* Custom Interactive Airport Weather Predictor & Trigger Form */}
+          <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+            <div className="text-xs font-bold text-sky-400 flex items-center gap-2">
+              <Sparkles className="w-4 h-4" />
+              <span>Interactive Airport Weather Predictor & Scenario Tester</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-400 mb-1">Select Airport Hub</label>
+                <select
+                  value={selectedAirportCode}
+                  onChange={(e) => setSelectedAirportCode(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-semibold focus:outline-none focus:border-sky-500 cursor-pointer"
+                >
+                  {AIRPORTS.map((a) => (
+                    <option key={a.code} value={a.code}>
+                      {a.city} ({a.code})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-400 mb-1">Predicted Weather Condition</label>
+                <select
+                  value={selectedWeatherType}
+                  onChange={(e) => setSelectedWeatherType(e.target.value as any)}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-semibold focus:outline-none focus:border-sky-500 cursor-pointer"
+                >
+                  <option value="Clear">☀️ Clear Skies (Optimal VFR)</option>
+                  <option value="Rain">🌧️ Moderate Rain</option>
+                  <option value="Dense Fog">🌫️ Dense Fog (Low Visibility)</option>
+                  <option value="Heavy Thunderstorm">⛈️ Heavy Thunderstorm</option>
+                  <option value="Typhoon / Cyclone">🌀 Typhoon / Super Cyclone</option>
+                  <option value="Blizzard">❄️ Blizzard / Snowstorm</option>
+                </select>
+              </div>
+
+              <div className="sm:col-span-2 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const sev = selectedWeatherType === 'Clear' ? 'normal' : selectedWeatherType === 'Rain' ? 'moderate' : 'severe';
+                    handleSimulateDisruption(selectedAirportCode, selectedWeatherType, sev);
+                  }}
+                  disabled={simulating}
+                  className="flex-1 py-2 px-4 rounded-xl bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white text-xs font-bold shadow-md cursor-pointer transition-all"
+                >
+                  {simulating ? 'Running AI Predictor...' : `🔮 Run Weather Predictor & Auto-Cancel Guard for ${selectedAirportCode}`}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Live Doppler Airport Cards */}
+        {/* Live Doppler Airport Cards (Exact Real-Time Weather API Telemetry) */}
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-base font-bold text-white flex items-center gap-2">
               <CloudRain className="w-5 h-5 text-sky-400" />
-              <span>Live Atmospheric Radar across Key Hubs</span>
+              <span>Live Atmospheric Radar across Key Hubs (Real-Time API)</span>
             </h3>
-            <span className="text-xs text-slate-400 flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-              <span>Updated live every 30s</span>
-            </span>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => loadAllHubsLiveWeather(true)}
+                disabled={isRefreshingLive}
+                className="text-xs text-sky-400 hover:text-sky-300 font-semibold flex items-center gap-1 cursor-pointer"
+              >
+                <RefreshCw className={`w-3 h-3 ${isRefreshingLive ? 'animate-spin' : ''}`} />
+                <span>Refresh Live API</span>
+              </button>
+              <span className="text-xs text-slate-400 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span>Live Feed Synced</span>
+              </span>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {AIRPORTS.slice(0, 6).map((airport) => {
-              // Find flights from this airport to inspect weather
-              const hubFlight = flights.find(f => f.origin.code === airport.code || f.destination.code === airport.code);
-              const weather = hubFlight?.weather || {
-                condition: 'Clear',
-                temperatureC: 28,
-                visibilityKm: 10,
-                windSpeedKmh: 12,
-                stormIndex: 4,
-                aiRiskScore: 3,
-                aiCancellationRisk: 'Low'
-              };
+            {keyHubCodes.map((code) => {
+              const airportObj = AIRPORTS.find(a => a.code === code) || { code, city: code, name: `${code} Airport` };
+              const liveW = liveHubsWeather[code] || getAirportWeatherImmediate(code);
 
-              const isCritical = weather.aiCancellationRisk === 'Critical - Auto Cancelled';
-              const isModerate = weather.aiCancellationRisk === 'Moderate';
+              const isCritical = liveW.flightSafetyStatus === 'SEVERE_IFR' || liveW.safetyScore < 40;
+              const isModerate = liveW.flightSafetyStatus === 'MODERATE_MVFR';
 
               return (
                 <div 
-                  key={airport.code}
+                  key={code}
                   className={`bg-slate-900 rounded-2xl p-5 border transition-all ${
                     isCritical 
                       ? 'border-red-500/50 bg-red-950/10 shadow-lg shadow-red-950/30' 
@@ -208,9 +832,9 @@ export const WeatherDisruptionCenterPage: React.FC = () => {
                   <div className="flex items-start justify-between mb-3">
                     <div>
                       <div className="text-lg font-bold text-white flex items-center gap-2">
-                        <span>{airport.city} ({airport.code})</span>
+                        <span>{liveW.cityName || airportObj.city} ({code})</span>
                       </div>
-                      <div className="text-xs text-slate-400">{airport.name}</div>
+                      <div className="text-xs text-slate-400">{liveW.airportName || airportObj.name}</div>
                     </div>
 
                     <div className="flex items-center gap-2">
@@ -218,7 +842,7 @@ export const WeatherDisruptionCenterPage: React.FC = () => {
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          aiVoice.speak(`Doppler Weather update for ${airport.city} airport, code ${airport.code}. Condition is ${weather.condition}, temperature ${weather.temperatureC} degrees Celsius, wind speed ${weather.windSpeedKmh} kilometers per hour, visibility ${weather.visibilityKm} kilometers. Risk level is ${weather.aiCancellationRisk}.`);
+                          aiVoice.speak(`Live weather report for ${liveW.cityName || airportObj.city}. Condition is ${liveW.conditionText}, temperature ${liveW.temperatureC} degrees Celsius, wind speed ${liveW.windSpeedKmh} kilometers per hour, visibility ${liveW.visibilityKm} kilometers. Safety status is ${liveW.flightSafetyStatus}.`);
                         }}
                         className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-sky-400 hover:text-white transition-colors cursor-pointer"
                         title="Listen to AI Weather Voice"
@@ -233,7 +857,7 @@ export const WeatherDisruptionCenterPage: React.FC = () => {
                           ? 'bg-amber-500/20 text-amber-400 border-amber-500/30'
                           : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
                       }`}>
-                        {weather.condition}
+                        {liveW.conditionText}
                       </div>
                     </div>
                   </div>
@@ -244,38 +868,38 @@ export const WeatherDisruptionCenterPage: React.FC = () => {
                       <div className="text-[11px] text-slate-400 flex items-center justify-center gap-1">
                         <Thermometer className="w-3 h-3 text-amber-400" /> Temp
                       </div>
-                      <div className="text-xs font-bold text-slate-200">{weather.temperatureC}°C</div>
+                      <div className="text-sm font-black text-slate-200 mt-0.5">{liveW.temperatureC}°C</div>
                     </div>
 
                     <div>
                       <div className="text-[11px] text-slate-400 flex items-center justify-center gap-1">
                         <Wind className="w-3 h-3 text-sky-400" /> Wind
                       </div>
-                      <div className="text-xs font-bold text-slate-200">{weather.windSpeedKmh} km/h</div>
+                      <div className="text-xs font-bold text-slate-200 mt-0.5">{liveW.windSpeedKmh} km/h</div>
                     </div>
 
                     <div>
                       <div className="text-[11px] text-slate-400 flex items-center justify-center gap-1">
                         <Eye className="w-3 h-3 text-emerald-400" /> Visibility
                       </div>
-                      <div className="text-xs font-bold text-slate-200">{weather.visibilityKm} km</div>
+                      <div className="text-xs font-bold text-slate-200 mt-0.5">{liveW.visibilityKm} km</div>
                     </div>
                   </div>
 
                   {/* AI Risk Indicator */}
                   <div className="mt-3 flex items-center justify-between text-xs">
-                    <span className="text-slate-400">AI Cancellation Risk:</span>
+                    <span className="text-slate-400">Doppler Safety Score:</span>
                     <span className={`font-bold ${
                       isCritical ? 'text-red-400' : isModerate ? 'text-amber-400' : 'text-emerald-400'
                     }`}>
-                      {weather.aiCancellationRisk} ({weather.aiRiskScore}%)
+                      {liveW.safetyScore}/100 ({liveW.flightSafetyStatus})
                     </span>
                   </div>
 
                   {isCritical && (
                     <div className="mt-3 p-2.5 rounded-xl bg-red-950/60 border border-red-500/30 text-[11px] text-red-200 flex items-center gap-2">
                       <ShieldAlert className="w-4 h-4 text-red-400 flex-shrink-0" />
-                      <span>AI Flight Grounding Active. 100% instant compensation unlocked.</span>
+                      <span>Zero-Human Auto-Grounding active. 100% full refund guaranteed.</span>
                     </div>
                   )}
                 </div>
@@ -312,7 +936,6 @@ export const WeatherDisruptionCenterPage: React.FC = () => {
             <div className="space-y-4">
               {disruptedFlights.map((flight) => {
                 const isAutoCancelled = flight.status === 'Cancelled';
-                // Find potential alternative flight on safe route
                 const alternativeFlight = flights.find(f => f.id !== flight.id && f.status !== 'Cancelled');
 
                 return (

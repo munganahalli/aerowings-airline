@@ -34,6 +34,8 @@ export const PassengerDetailsPage: React.FC = () => {
     setUserView,
     currency,
     userProfile,
+    verifiedBookingPhone,
+    setVerifiedBookingPhone,
     calculateFareBreakdown,
     addToast
   } = useAirline();
@@ -45,8 +47,10 @@ export const PassengerDetailsPage: React.FC = () => {
   }, []);
 
   const [contactEmail, setContactEmail] = useState<string>(userProfile.email || '');
-  const [contactPhone, setContactPhone] = useState<string>(userProfile.phone || '');
+  const [contactPhone, setContactPhone] = useState<string>(verifiedBookingPhone || userProfile.phone || '+91 8971541794');
   const [verifyingIndex, setVerifyingIndex] = useState<number | null>(null);
+  const [sendingStepOtp, setSendingStepOtp] = useState<boolean>(false);
+  const [stepOtpAlert, setStepOtpAlert] = useState<string | null>(null);
 
   if (!selectedFlight) {
     return (
@@ -190,9 +194,52 @@ export const PassengerDetailsPage: React.FC = () => {
     });
 
     if (!contactEmail.trim()) setContactEmail(userProfile.email || 'traveler@aerowings.com');
-    if (!contactPhone.trim()) setContactPhone(userProfile.phone || '+1 555-0199');
+    if (!contactPhone.trim()) setContactPhone(verifiedBookingPhone || userProfile.phone || '+91 8971541794');
     addToast('✅ All Traveler Names, Aadhaar, PAN & Visa Verified!', 'success');
     aiVoice.speak('All passenger personal details and visa credentials verified successfully.');
+  };
+
+  const normalizePhone = (raw: string) => {
+    const cleaned = raw.trim();
+    const digits = cleaned.replace(/\D/g, '');
+    if (cleaned.startsWith('+')) return `+${digits}`;
+    if (digits.length === 10) return `+91${digits}`;
+    if (digits.length === 12 && digits.startsWith('91')) return `+${digits}`;
+    return `+${digits}`;
+  };
+
+  const handleSendStepOtp = async () => {
+    const clean = contactPhone.trim();
+    if (!clean || clean.replace(/\D/g, '').length < 8) {
+      addToast('Please enter a valid mobile phone number to generate an OTP.', 'error');
+      return;
+    }
+    const normalized = normalizePhone(clean);
+    setSendingStepOtp(true);
+    try {
+      const res = await fetch('/api/otp/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phoneNumber: normalized, purpose: 'flight_booking' })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        const generatedOtp = String(data.otp || data.fallbackOtp || data.devPreviewOtp || '');
+        const formattedPhone = data.phoneNumber || normalized;
+        if (typeof setVerifiedBookingPhone === 'function') {
+          setVerifiedBookingPhone(formattedPhone);
+        }
+        const msg = `OTP sent to ${formattedPhone}: ${generatedOtp}`;
+        setStepOtpAlert(msg);
+        addToast(msg, 'success');
+      } else {
+        addToast(data.error || 'Failed to generate OTP for this phone number.', 'error');
+      }
+    } catch {
+      addToast('Network error while sending OTP.', 'error');
+    } finally {
+      setSendingStepOtp(false);
+    }
   };
 
   // STRICT PROCEED HANDLER:
@@ -229,10 +276,37 @@ export const PassengerDetailsPage: React.FC = () => {
       return;
     }
 
-    if (!contactPhone.trim() || contactPhone.trim().length < 8) {
+    if (!contactPhone.trim() || contactPhone.replace(/\D/g, '').length < 8) {
       addToast('Please enter a valid contact phone number for flight SMS alerts.', 'error');
       return;
     }
+
+    const normalizedPhone = normalizePhone(contactPhone);
+    if (typeof setVerifiedBookingPhone === 'function') {
+      setVerifiedBookingPhone(normalizedPhone);
+    }
+    try {
+      localStorage.setItem('aerowings_linked_phone', normalizedPhone);
+      localStorage.setItem('aerowings_linked_email', contactEmail.trim());
+    } catch {
+      // ignore storage error
+    }
+
+    // Also trigger dynamic OTP notification for the submitted phone number if not yet sent
+    fetch('/api/otp/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phoneNumber: normalizedPhone, purpose: 'flight_booking' })
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data?.success) {
+          const generatedOtp = String(data.otp || data.fallbackOtp || data.devPreviewOtp || '');
+          const formattedPhone = data.phoneNumber || normalizedPhone;
+          addToast(`OTP sent to ${formattedPhone}: ${generatedOtp}`, 'success');
+        }
+      })
+      .catch(() => {});
 
     addToast('✅ All traveler details & Visa verified! Proceeding to Step 3: Choose Seats.', 'success');
     aiVoice.speak('All personal details and visa clearances verified. Proceeding to seat selection.');
@@ -572,19 +646,40 @@ export const PassengerDetailsPage: React.FC = () => {
 
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1.5" htmlFor="pax-contact-phone">
-                {t('passenger.phone', 'Mobile Number')} *
+                {t('passenger.phone', 'Mobile Number')} * <span className="text-emerald-400 text-[10px]">(Dynamic OTP & SMS Alerts)</span>
               </label>
-              <div className="relative">
-                <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
-                <input
-                  type="tel"
-                  id="pax-contact-phone"
-                  value={contactPhone}
-                  onChange={(e) => setContactPhone(e.target.value)}
-                  placeholder="+1 (555) 012-3456"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-10 pr-3 py-2.5 text-xs font-mono text-white focus:outline-none focus:border-blue-500"
-                />
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                  <input
+                    type="tel"
+                    id="pax-contact-phone"
+                    value={contactPhone}
+                    onChange={(e) => {
+                      setContactPhone(e.target.value);
+                      if (typeof setVerifiedBookingPhone === 'function') {
+                        setVerifiedBookingPhone(e.target.value);
+                      }
+                    }}
+                    placeholder="+91 8971541794"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-10 pr-3 py-2.5 text-xs font-mono text-white focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleSendStepOtp}
+                  disabled={sendingStepOtp}
+                  className="px-3.5 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white font-bold text-xs shrink-0 cursor-pointer transition-colors"
+                >
+                  {sendingStepOtp ? 'Sending...' : 'Send OTP'}
+                </button>
               </div>
+              {stepOtpAlert && (
+                <div className="mt-2 p-2.5 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-xs font-mono font-bold flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>{stepOtpAlert}</span>
+                </div>
+              )}
             </div>
           </div>
         </div>

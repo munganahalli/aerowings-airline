@@ -1,5 +1,6 @@
-import { Airport, Flight, RouteType, WeatherCondition, CompetitorComparison, AIPrediction } from '../types/airline';
-import { AIRPORTS } from '../data/mockData';
+import { Airport, Flight, RouteType, WeatherCondition, CompetitorComparison, AIPrediction, FlightStatus } from '../types/airline';
+import { AIRPORTS, registerCustomAirport } from '../data/mockData';
+import { isAirportWeatherUnsafe, getAirportWeatherImmediate } from './realtimeWeather';
 
 // Coordinates lookup for distance and flight duration calculation
 const AIRPORT_COORDINATES: Record<string, { lat: number; lng: number }> = {
@@ -127,17 +128,11 @@ function calculateDistanceKm(code1: string, code2: string): number {
 }
 
 export function getAirportByCode(code: string): Airport {
-  const match = AIRPORTS.find(a => a.code.toUpperCase() === code.toUpperCase());
+  const match = AIRPORTS.find(
+    a => a.code.toUpperCase() === code.toUpperCase() || a.city.toLowerCase() === code.trim().toLowerCase()
+  );
   if (match) return match;
-  return {
-    code: code.toUpperCase(),
-    name: `${code.toUpperCase()} International Airport`,
-    city: code.toUpperCase(),
-    state: 'Global Gateway',
-    country: 'International',
-    terminal: 'T1',
-    isInternational: true,
-  };
+  return registerCustomAirport(code);
 }
 
 export function generateFlightsForRoute(originCode: string, destinationCode: string): Flight[] {
@@ -430,20 +425,46 @@ export function generateFlightsForRoute(originCode: string, destinationCode: str
     const businessFare = Math.round(economyFare * 2.85);
     const firstFare = Math.round(economyFare * 4.6);
 
-    // Weather generation based on route type
-    const weatherConditions: WeatherCondition['condition'][] = ['Clear', 'Partly Cloudy', 'Clear', 'Clear'];
-    const selectedCondition = weatherConditions[idx % weatherConditions.length];
+    // Weather generation based on route type and live weather predictor overrides
+    const origCheck = isAirportWeatherUnsafe(origin.code);
+    const destCheck = isAirportWeatherUnsafe(dest.code);
+    const activeUnsafe = origCheck.unsafe ? origCheck : destCheck.unsafe ? destCheck : null;
 
-    const weather: WeatherCondition = {
-      condition: selectedCondition,
-      temperatureC: isInternational ? 22 : 28,
-      visibilityKm: 10,
-      windSpeedKmh: 12 + (idx * 2),
-      stormIndex: 4,
-      aiRiskScore: 3,
-      aiCancellationRisk: 'Low',
-      isAiAutoCancelled: false,
-    };
+    const weatherConditions: WeatherCondition['condition'][] = ['Clear', 'Partly Cloudy', 'Clear', 'Clear'];
+    const selectedCondition = activeUnsafe
+      ? (activeUnsafe.condition as WeatherCondition['condition'])
+      : weatherConditions[idx % weatherConditions.length];
+
+    const weather: WeatherCondition = activeUnsafe
+      ? {
+          condition: selectedCondition,
+          temperatureC: activeUnsafe.weather.temperatureC,
+          visibilityKm: activeUnsafe.weather.visibilityKm,
+          windSpeedKmh: activeUnsafe.weather.windSpeedKmh,
+          stormIndex: 92,
+          aiRiskScore: 96,
+          aiCancellationRisk: 'Critical - Auto Cancelled',
+          isAiAutoCancelled: true,
+          aiAutoCancelReason: `AI Auto-Cancelled: Severe ${selectedCondition} at ${activeUnsafe.weather.airportCode} exceeding flight safety limits.`,
+          compensationOffered: {
+            freeReschedule: true,
+            fullRefund: true,
+            mealVoucher: true,
+            hotelStay: true
+          }
+        }
+      : {
+          condition: selectedCondition,
+          temperatureC: getAirportWeatherImmediate(origin.code).temperatureC,
+          visibilityKm: getAirportWeatherImmediate(origin.code).visibilityKm,
+          windSpeedKmh: getAirportWeatherImmediate(origin.code).windSpeedKmh,
+          stormIndex: 4,
+          aiRiskScore: 3,
+          aiCancellationRisk: 'Low',
+          isAiAutoCancelled: false,
+        };
+
+    const computedStatus: FlightStatus = activeUnsafe ? 'Cancelled' : 'On Time';
 
     const competitorPrices: CompetitorComparison[] = [
       {
@@ -512,7 +533,7 @@ export function generateFlightsForRoute(originCode: string, destinationCode: str
         'USB-C & Fast AC Power',
         'AeroStream HD Movies & Live TV',
       ],
-      status: 'On Time',
+      status: computedStatus,
       aircraftRegistration: `VT-${slot.airlineCode}${200 + idx * 15}`,
       gate: `${12 + idx * 3}${String.fromCharCode(65 + (idx % 3))}`,
       terminal: slot.terminal,

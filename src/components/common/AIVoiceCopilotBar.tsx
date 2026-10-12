@@ -17,6 +17,7 @@ import {
   Send
 } from 'lucide-react';
 import { useAirline } from '../../context/AirlineContext';
+import { useLanguage } from '../../context/LanguageContext';
 import { GoogleMapsGroundingModal } from './GoogleMapsGroundingModal';
 import { AiLanguageCode } from '../../types/airline';
 
@@ -49,18 +50,30 @@ export const AIVoiceCopilotBar: React.FC = () => {
     searchParams, 
     addToast,
     aiLanguage,
-    setAiLanguage
+    setAiLanguage,
+    performSearch,
+    executeVoiceBooking,
+    setUserView
   } = useAirline();
+  const { language: websiteLang, setLanguage: setWebsiteLang } = useLanguage();
 
   useEffect(() => {
     setSelectedLanguage(aiLanguage);
   }, [aiLanguage]);
 
+  useEffect(() => {
+    if (websiteLang && websiteLang !== selectedLanguage) {
+      setSelectedLanguage(websiteLang as AiLanguageCode);
+      setAiLanguage(websiteLang as AiLanguageCode);
+    }
+  }, [websiteLang]);
+
   const handleLanguageChange = (lang: AiLanguageCode) => {
     setSelectedLanguage(lang);
     setAiLanguage(lang);
+    setWebsiteLang(lang as any);
     aiVoice.testPronunciation(lang);
-    addToast(`AI Voice switched to ${lang.toUpperCase()} with crystal-clear pronunciation engine.`, 'success');
+    addToast(`Website & AI Voice switched to ${lang.toUpperCase()} with crystal-clear pronunciation.`, 'success');
   };
 
   const handleTestPronunciation = () => {
@@ -78,15 +91,15 @@ export const AIVoiceCopilotBar: React.FC = () => {
   const handleToggleMute = () => {
     const isNowMuted = aiVoice.toggleMute();
     if (!isNowMuted) {
-      aiVoice.speak('AeroWings AI Voice Assistant is active. I will assist you throughout your booking journey.');
+      aiVoice.testPronunciation(selectedLanguage);
     }
   };
 
   const handleReplay = () => {
     if (voiceState.currentText) {
-      aiVoice.speak(voiceState.currentText);
+      aiVoice.speak(voiceState.currentText, { lang: selectedLanguage });
     } else {
-      aiVoice.speak('Welcome to AeroWings Airlines. Real-time AI weather radar and 100% instant refund protection are active.');
+      aiVoice.testPronunciation(selectedLanguage);
     }
   };
 
@@ -95,6 +108,27 @@ export const AIVoiceCopilotBar: React.FC = () => {
     if (!queryText.trim()) return;
     setIsProcessingVoice(true);
     addToast(`Processing voice query: "${queryText}"`, 'info');
+
+    const lower = queryText.toLowerCase();
+
+    // Direct Voice Flight Search Navigation
+    if (lower.includes('search') || lower.includes('find flight') || lower.includes('flights to') || lower.includes('show flight') || lower.includes('खोजें') || lower.includes('ಹುಡುಕಿ')) {
+      let orig = 'DEL';
+      let dest = 'BOM';
+      if (lower.includes('bangalore') || lower.includes('bengaluru') || lower.includes('blr')) dest = 'BLR';
+      else if (lower.includes('goa') || lower.includes('goi')) dest = 'GOI';
+      else if (lower.includes('london') || lower.includes('lhr')) dest = 'LHR';
+      else if (lower.includes('dubai') || lower.includes('dxb')) dest = 'DXB';
+      else if (lower.includes('kolkata') || lower.includes('ccu')) dest = 'CCU';
+      else if (lower.includes('chennai') || lower.includes('maa')) dest = 'MAA';
+
+      performSearch({ ...searchParams, origin: orig, destination: dest });
+      aiVoice.speak(`Searching flights connecting ${orig} to ${dest}. Flight schedule updated.`, { lang: selectedLanguage });
+      setIsProcessingVoice(false);
+      setShowVoiceDialog(false);
+      setTypedQuestion('');
+      return;
+    }
 
     try {
       const res = await fetch('/api/ai/live-voice', {
@@ -110,11 +144,59 @@ export const AIVoiceCopilotBar: React.FC = () => {
         })
       });
       const data = await res.json();
+
+      // If Gemini AI triggered the process_flight_booking function
+      if (data.functionCall && data.functionCall.name === 'process_flight_booking') {
+        const args = data.functionCall.args || {};
+        await executeVoiceBooking({
+          origin: searchParams.origin || 'DEL',
+          destination: searchParams.destination || 'BOM',
+          flightNumber: args.flightNumber || 'AW-302',
+          passengerName: args.passengerName || 'Valued Passenger',
+          recipientPhone: args.recipientPhone || '9876543210',
+          seatClass: args.seatClass || 'Economy',
+          totalPriceINR: args.totalPriceINR,
+          smsMessage: args.smsMessage
+        });
+        if (data.speechText) {
+          aiVoice.speak(data.speechText, { lang: selectedLanguage });
+        }
+        return;
+      }
+
+      // If user transcript is a direct booking request without manual form clicks
+      if (lower.includes('book') || lower.includes('reserve') || lower.includes('बुक') || lower.includes('ಬುಕ್') || lower.includes('బుక్')) {
+        let nameMatch = queryText.match(/for\s+([A-Za-z\s]+?)(?:,|\.|\s+phone|\s+with|\s+number|\s*\d|$)/i);
+        let phoneMatch = queryText.match(/(\d{10})/);
+        const passName = nameMatch ? nameMatch[1].trim() : 'Valued Passenger';
+        const phone = phoneMatch ? phoneMatch[1] : '9876543210';
+
+        await executeVoiceBooking({
+          origin: searchParams.origin || 'DEL',
+          destination: searchParams.destination || 'BOM',
+          flightNumber: selectedFlight?.flightNumber || 'AW-302',
+          passengerName: passName,
+          recipientPhone: phone,
+          seatClass: 'Economy',
+          totalPriceINR: selectedFlight?.prices.economy || 4850
+        });
+        return;
+      }
+
       if (data.speechText) {
         aiVoice.speak(data.speechText, { lang: selectedLanguage });
       }
     } catch (err) {
-      aiVoice.speak(`I heard: "${queryText}". AeroWings is operating normally with 100% weather refund protection.`, { lang: selectedLanguage });
+      if (lower.includes('book') || lower.includes('ticket')) {
+        await executeVoiceBooking({
+          origin: 'DEL',
+          destination: 'BOM',
+          passengerName: 'Valued Passenger',
+          recipientPhone: '9876543210'
+        });
+      } else {
+        aiVoice.speak(`I heard: "${queryText}". AeroWings is operating normally with 100% weather refund protection.`, { lang: selectedLanguage });
+      }
     } finally {
       setIsProcessingVoice(false);
       setShowVoiceDialog(false);
@@ -245,6 +327,19 @@ export const AIVoiceCopilotBar: React.FC = () => {
               </div>
             )}
 
+            {/* 100% Hands-Free Voice Booking Trigger */}
+            <button
+              type="button"
+              onClick={() => {
+                processVoiceQuery('Book flight from Delhi to Mumbai for Rahul Sharma 9876543210');
+              }}
+              className="hidden lg:inline-flex px-2.5 py-1 rounded-full bg-gradient-to-r from-amber-500/20 to-sky-500/20 hover:from-amber-500/30 hover:to-sky-500/30 border border-amber-500/40 text-amber-300 font-bold items-center gap-1.5 transition-all text-xs cursor-pointer shadow-sm"
+              title="Click to execute complete hands-free voice booking"
+            >
+              <Zap className="w-3.5 h-3.5 text-amber-400" />
+              <span>Voice Book (Hands-Free)</span>
+            </button>
+
             {/* Subtitles text (hidden on phone, visible on tablet/desktop) */}
             <div className="truncate text-slate-300 text-xs italic bg-slate-900/80 px-2.5 py-1 rounded-lg border border-slate-800 flex-1 max-w-md hidden md:block">
               {voiceState.currentText ? (
@@ -360,11 +455,11 @@ export const AIVoiceCopilotBar: React.FC = () => {
               <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Common Flight Questions</span>
               <div className="flex flex-wrap gap-1.5">
                 {[
-                  'What is my flight status?',
+                  'Book flight Delhi to Mumbai for Rahul Sharma 9876543210',
+                  'Search flights Delhi to Bangalore',
+                  'What is the live weather at Delhi Airport?',
                   'Check weather & Doppler radar',
-                  'What are the baggage allowances?',
-                  'How does zero-fee refund work?',
-                  'Web check-in timings'
+                  'Test Zero-Human Weather Auto-Cancel & Refund'
                 ].map((q) => (
                   <button
                     key={q}

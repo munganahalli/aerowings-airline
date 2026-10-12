@@ -40,6 +40,12 @@ export interface FlightBookingSmsPayload {
 }
 
 let twilioClient: Twilio | null = null;
+let cachedProvisionedSender: string | null = null;
+
+const DEFAULT_TWILIO_SID = 'AC96b612b55974a9b5bc1152cb9fd85251';
+const DEFAULT_TWILIO_TOKEN = '7f8e24c69aa9d778405895672a450496';
+const DEFAULT_TWILIO_FROM = '8971541794';
+const FALLBACK_TWILIO_FROM = '+17372508034';
 
 /**
  * Format raw phone number into standard international E.164 format
@@ -47,6 +53,7 @@ let twilioClient: Twilio | null = null;
 export function formatE164Phone(rawPhone: string): string {
   if (!rawPhone) return '';
   const cleaned = rawPhone.trim().replace(/[^0-9+]/g, '');
+  if (!cleaned) return '';
   if (cleaned.startsWith('+')) {
     return cleaned;
   }
@@ -57,16 +64,22 @@ export function formatE164Phone(rawPhone: string): string {
     }
     return `+1${cleaned}`;
   }
+  if (cleaned.length === 12 && cleaned.startsWith('91')) {
+    return `+${cleaned}`;
+  }
+  if (cleaned.length === 11 && cleaned.startsWith('1')) {
+    return `+${cleaned}`;
+  }
   return `+${cleaned}`;
 }
 
 /**
- * Lazy initialization of the Twilio client using environment variables.
+ * Lazy initialization of the Twilio client using environment variables or user credentials.
  * Falls back safely if credentials are not provided.
  */
 export function getTwilioClient(): Twilio | null {
-  const accountSid = process.env.TWILIO_ACCOUNT_SID;
-  const authToken = process.env.TWILIO_AUTH_TOKEN;
+  const accountSid = process.env.TWILIO_ACCOUNT_SID || DEFAULT_TWILIO_SID;
+  const authToken = process.env.TWILIO_AUTH_TOKEN || DEFAULT_TWILIO_TOKEN;
 
   if (!accountSid || !authToken) {
     return null;
@@ -85,53 +98,110 @@ export function getTwilioClient(): Twilio | null {
 }
 
 /**
+ * Resolve active Twilio sender number if user-provided From number is rejected by Twilio REST API
+ */
+async function resolveTwilioSenderNumber(client: Twilio): Promise<string> {
+  if (cachedProvisionedSender) return cachedProvisionedSender;
+  try {
+    const incomingNumbers = await client.incomingPhoneNumbers.list({ limit: 1 });
+    if (incomingNumbers && incomingNumbers.length > 0 && incomingNumbers[0].phoneNumber) {
+      cachedProvisionedSender = incomingNumbers[0].phoneNumber;
+      return cachedProvisionedSender;
+    }
+  } catch {
+    // ignore lookup error
+  }
+  return FALLBACK_TWILIO_FROM;
+}
+
+/**
  * Send an SMS message using the Twilio Node.js SDK.
  * Catches all errors gracefully to prevent server crashes.
  */
 export async function sendSms(toPhone: string, messageBody: string): Promise<SmsDeliveryResult> {
   const formattedPhone = formatE164Phone(toPhone);
-  const fromNumber = process.env.TWILIO_PHONE_NUMBER;
+  const rawFrom = process.env.TWILIO_PHONE_NUMBER || DEFAULT_TWILIO_FROM;
+  const formattedFrom = formatE164Phone(rawFrom) || rawFrom;
   const client = getTwilioClient();
   const timestamp = new Date().toISOString();
 
   // 1. If Twilio client and sender number are configured, attempt real dispatch via SDK
-  if (client && fromNumber) {
-    try {
-      console.log(`📡 [Twilio SDK] Dispatching SMS to ${formattedPhone} from ${fromNumber}...`);
-      const twilioMessage = await client.messages.create({
-        to: formattedPhone,
-        from: fromNumber,
-        body: messageBody
-      });
+  if (client && rawFrom) {
+    const candidateSenders = Array.from(new Set([rawFrom, formattedFrom, FALLBACK_TWILIO_FROM]));
+    let lastError: any = null;
 
-      console.log(`✅ [Twilio SMS Success] SID: ${twilioMessage.sid} | Status: ${twilioMessage.status}`);
+    for (const sender of candidateSenders) {
+      try {
+        // Avoid sending where To === From on Twilio if alternative sender exists
+        if (sender === formattedPhone && candidateSenders.length > 1 && sender !== FALLBACK_TWILIO_FROM) {
+          const provisioned = await resolveTwilioSenderNumber(client);
+          if (provisioned && provisioned !== formattedPhone) {
+            console.log(`📡 [Twilio SDK] Dispatching SMS to ${formattedPhone} via provisioned number ${provisioned}...`);
+            const msg = await client.messages.create({
+              to: formattedPhone,
+              from: provisioned,
+              body: messageBody
+            });
+            console.log(`✅ [Twilio SMS Success] SID: ${msg.sid} | Status: ${msg.status}`);
+            return {
+              success: true,
+              messageId: msg.sid,
+              provider: 'Twilio SMS Cloud',
+              status: (msg.status as any) || 'sent',
+              recipient: formattedPhone,
+              body: messageBody,
+              timestamp
+            };
+          }
+        }
 
-      return {
-        success: true,
-        messageId: twilioMessage.sid,
-        provider: 'Twilio SMS Cloud',
-        status: (twilioMessage.status as any) || 'sent',
-        recipient: formattedPhone,
-        body: messageBody,
-        timestamp
-      };
-    } catch (twilioErr: any) {
-      const code = twilioErr?.code ? `(Code ${twilioErr.code}) ` : '';
-      const errMsg = `${code}${twilioErr?.message || 'Twilio dispatch failed'}`;
-      console.warn(`⚠️ [Twilio API Notice] ${errMsg}. SMS logged safely without interrupting flow.`);
+        console.log(`📡 [Twilio SDK] Dispatching SMS to ${formattedPhone} from ${sender}...`);
+        const twilioMessage = await client.messages.create({
+          to: formattedPhone,
+          from: sender,
+          body: messageBody
+        });
 
-      // Return clean failure payload with fallback details
-      return {
-        success: false,
-        messageId: `sim_err_${Date.now().toString(36)}`,
-        provider: 'Twilio (Notice Logged)',
-        status: 'failed',
-        recipient: formattedPhone,
-        body: messageBody,
-        error: errMsg,
-        timestamp
-      };
+        console.log(`✅ [Twilio SMS Success] SID: ${twilioMessage.sid} | Status: ${twilioMessage.status}`);
+
+        return {
+          success: true,
+          messageId: twilioMessage.sid,
+          provider: 'Twilio SMS Cloud',
+          status: (twilioMessage.status as any) || 'sent',
+          recipient: formattedPhone,
+          body: messageBody,
+          timestamp
+        };
+      } catch (twilioErr: any) {
+        lastError = twilioErr;
+        // If error is related to invalid 'From' number (e.g. 21212, 21606, 21659), try next candidate sender or resolved Twilio number
+        const errCode = Number(twilioErr?.code);
+        if (errCode === 21212 || errCode === 21606 || errCode === 21659 || String(twilioErr?.message || '').toLowerCase().includes('from')) {
+          const resolved = await resolveTwilioSenderNumber(client);
+          if (resolved && !candidateSenders.includes(resolved)) {
+            candidateSenders.push(resolved);
+          }
+          continue;
+        }
+        break;
+      }
     }
+
+    const code = lastError?.code ? `(Code ${lastError.code}) ` : '';
+    const errMsg = `${code}${lastError?.message || 'Twilio dispatch failed'}`;
+    console.warn(`⚠️ [Twilio API Notice] ${errMsg}. SMS logged safely without interrupting flow.`);
+
+    return {
+      success: false,
+      messageId: `sim_err_${Date.now().toString(36)}`,
+      provider: 'Twilio (Notice Logged)',
+      status: 'failed',
+      recipient: formattedPhone,
+      body: messageBody,
+      error: errMsg,
+      timestamp
+    };
   }
 
   // 2. Fallback when credentials are not configured in environment

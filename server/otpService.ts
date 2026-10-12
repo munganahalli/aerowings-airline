@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { MongoClient, Collection, Db } from 'mongodb';
+import { sendSms, formatE164Phone as twilioFormatE164 } from './twilioSmsService.ts';
 
 // Interface for OTP Document in MongoDB
 export interface OtpDocument {
@@ -34,19 +35,13 @@ let isMongoConnecting = false;
 const DEFAULT_MONGODB_URI = 'mongodb+srv://arunkumartharun400328_db_user:GQv4bcNNhxn312bT@cluster0.kvtruwh.mongodb.net/?appName=Cluster0';
 const DEFAULT_TWILIO_SID = 'AC96b612b55974a9b5bc1152cb9fd85251';
 const DEFAULT_TWILIO_TOKEN = '7f8e24c69aa9d778405895672a450496';
-const DEFAULT_TWILIO_FROM = '+17372508034';
+const DEFAULT_TWILIO_FROM = '8971541794';
 
 /**
  * Format phone to international E.164 for SMS delivery
  */
 export function formatE164Phone(rawPhone: string): string {
-  const digits = rawPhone.trim().replace(/[^0-9+]/g, '');
-  if (digits.startsWith('+')) return digits;
-  if (digits.length === 10) {
-    if (/^[6-9]/.test(digits)) return `+91${digits}`;
-    return `+1${digits}`;
-  }
-  return `+${digits}`;
+  return twilioFormatE164(rawPhone);
 }
 
 /**
@@ -100,62 +95,35 @@ export function generateSecure6DigitOtp(): string {
 }
 
 /**
- * Sends OTP via SMS API (Twilio / SMS Gateway / Mock for development)
+ * Sends OTP via SMS API (Twilio SDK with fallback for any phone number)
  */
 export async function sendSmsViaApi(
   phoneNumber: string,
   otp: string
-): Promise<{ success: boolean; messageId: string; provider: string; previewText: string }> {
+): Promise<{ success: boolean; messageId: string; provider: string; previewText: string; error?: string }> {
   const message = `Your AeroWings Prestige Flight Booking verification code is: ${otp}. Valid for 5 minutes. Do not share this OTP with anyone.`;
   const formattedPhone = formatE164Phone(phoneNumber);
-  
-  // External SMS API credentials (Twilio)
-  const twilioSid = process.env.TWILIO_ACCOUNT_SID || DEFAULT_TWILIO_SID;
-  const twilioToken = process.env.TWILIO_AUTH_TOKEN || DEFAULT_TWILIO_TOKEN;
-  const twilioPhone = process.env.TWILIO_PHONE_NUMBER || DEFAULT_TWILIO_FROM;
 
-  if (twilioSid && twilioToken && twilioPhone) {
-    try {
-      const auth = Buffer.from(`${twilioSid}:${twilioToken}`).toString('base64');
-      const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Messages.json`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Basic ${auth}`,
-          'Content-Type': 'application/x-www-form-urlencoded'
-        },
-        body: new URLSearchParams({
-          To: formattedPhone,
-          From: twilioPhone,
-          Body: message
-        }).toString()
-      });
-
-      const resJson: any = await response.json();
-      if (response.ok) {
-        console.log(`✅ [Twilio SMS Cloud] Dispatched to ${formattedPhone}. SID: ${resJson.sid}`);
-        return {
-          success: true,
-          messageId: resJson.sid || 'twilio_' + Date.now(),
-          provider: 'Twilio SMS Cloud',
-          previewText: message
-        };
-      } else {
-        console.warn(`⚠️ [Twilio API Notice] Code ${resJson.code}: ${resJson.message}`);
-      }
-    } catch (smsErr) {
-      console.warn('Twilio dispatch failed, using standard SMS gateway fallback:', smsErr);
-    }
+  const twilioRes = await sendSms(formattedPhone, message);
+  if (twilioRes.success && twilioRes.status !== 'failed') {
+    return {
+      success: true,
+      messageId: twilioRes.messageId,
+      provider: twilioRes.provider,
+      previewText: message
+    };
   }
 
-  // Fast2SMS / Generic Gateway or Development SMS Dispatcher
+  // Fallback gateway ID so dynamic OTP works for any phone number entered
   const simulatedId = 'sms_' + crypto.randomBytes(6).toString('hex');
-  console.log(`📱 [SMS Gateway] Dispatched to ${formattedPhone}: "${message}" (ID: ${simulatedId})`);
+  console.log(`📱 [SMS Gateway] OTP ${otp} ready for ${formattedPhone}: "${message}" (ID: ${simulatedId})`);
 
   return {
-    success: true,
-    messageId: simulatedId,
-    provider: 'AeroWings Prestige SMS Gateway',
-    previewText: message
+    success: false,
+    messageId: twilioRes.messageId || simulatedId,
+    provider: twilioRes.provider || 'AeroWings Prestige SMS Gateway',
+    previewText: message,
+    error: twilioRes.error
   };
 }
 
@@ -165,9 +133,10 @@ export async function sendSmsViaApi(
 export async function saveOtpToDatabase(phoneNumber: string, otp: string, purpose = 'flight_booking'): Promise<OtpDocument> {
   const now = new Date();
   const expiresAt = new Date(now.getTime() + 5 * 60 * 1000); // 5 minutes exactly
+  const normalizedPhone = formatE164Phone(phoneNumber) || phoneNumber.trim();
 
   const otpDoc: OtpDocument = {
-    phoneNumber: phoneNumber.trim(),
+    phoneNumber: normalizedPhone,
     otp,
     createdAt: now,
     expiresAt,
@@ -176,13 +145,18 @@ export async function saveOtpToDatabase(phoneNumber: string, otp: string, purpos
     attempts: 0
   };
 
+  // Always keep in-memory copy synced alongside MongoDB for instant reliability
+  inMemoryOtpStore.set(normalizedPhone, otpDoc);
+
   const col = await initMongo();
   if (col) {
-    // Delete any previous active OTPs for this phone number
-    await col.deleteMany({ phoneNumber: phoneNumber.trim() });
-    await col.insertOne(otpDoc);
-  } else {
-    inMemoryOtpStore.set(phoneNumber.trim(), otpDoc);
+    try {
+      // Delete any previous active OTPs for this phone number
+      await col.deleteMany({ phoneNumber: normalizedPhone });
+      await col.insertOne(otpDoc);
+    } catch (e) {
+      console.warn('MongoDB OTP save fallback to memory:', e);
+    }
   }
 
   return otpDoc;
@@ -195,16 +169,24 @@ export async function verifyOtpInDatabase(
   phoneNumber: string,
   userEnteredOtp: string
 ): Promise<{ valid: boolean; message: string; expired?: boolean; attemptsExceeded?: boolean }> {
-  const cleanPhone = phoneNumber.trim();
+  const cleanPhone = formatE164Phone(phoneNumber) || phoneNumber.trim();
+  const rawTrimmed = phoneNumber.trim();
   const cleanOtp = userEnteredOtp.trim();
 
   const col = await initMongo();
   let record: OtpDocument | null = null;
 
   if (col) {
-    record = await col.findOne({ phoneNumber: cleanPhone });
-  } else {
-    record = inMemoryOtpStore.get(cleanPhone) || null;
+    try {
+      record = await col.findOne({
+        $or: [{ phoneNumber: cleanPhone }, { phoneNumber: rawTrimmed }]
+      });
+    } catch (e) {
+      console.warn('MongoDB OTP find fallback to memory:', e);
+    }
+  }
+  if (!record) {
+    record = inMemoryOtpStore.get(cleanPhone) || inMemoryOtpStore.get(rawTrimmed) || null;
   }
 
   if (!record) {
@@ -219,10 +201,10 @@ export async function verifyOtpInDatabase(
   if (now > record.expiresAt) {
     // Remove expired document
     if (col) {
-      await col.deleteOne({ phoneNumber: cleanPhone });
-    } else {
-      inMemoryOtpStore.delete(cleanPhone);
+      try { await col.deleteOne({ phoneNumber: record.phoneNumber }); } catch {}
     }
+    inMemoryOtpStore.delete(cleanPhone);
+    inMemoryOtpStore.delete(rawTrimmed);
     return {
       valid: false,
       expired: true,
@@ -233,10 +215,10 @@ export async function verifyOtpInDatabase(
   // Rate-limiting check for incorrect attempts (maximum 5 attempts)
   if (record.attempts >= 5) {
     if (col) {
-      await col.deleteOne({ phoneNumber: cleanPhone });
-    } else {
-      inMemoryOtpStore.delete(cleanPhone);
+      try { await col.deleteOne({ phoneNumber: record.phoneNumber }); } catch {}
     }
+    inMemoryOtpStore.delete(cleanPhone);
+    inMemoryOtpStore.delete(rawTrimmed);
     return {
       valid: false,
       attemptsExceeded: true,
@@ -247,10 +229,11 @@ export async function verifyOtpInDatabase(
   // Match OTP
   if (record.otp !== cleanOtp) {
     const updatedAttempts = record.attempts + 1;
+    record.attempts = updatedAttempts;
     if (col) {
-      await col.updateOne({ phoneNumber: cleanPhone }, { $set: { attempts: updatedAttempts } });
-    } else {
-      record.attempts = updatedAttempts;
+      try {
+        await col.updateOne({ phoneNumber: record.phoneNumber }, { $set: { attempts: updatedAttempts } });
+      } catch {}
     }
 
     return {
@@ -259,12 +242,12 @@ export async function verifyOtpInDatabase(
     };
   }
 
-  // Valid OTP! Delete or mark as verified so it cannot be reused
+  // Valid OTP! Delete so it cannot be reused
   if (col) {
-    await col.deleteOne({ phoneNumber: cleanPhone });
-  } else {
-    inMemoryOtpStore.delete(cleanPhone);
+    try { await col.deleteOne({ phoneNumber: record.phoneNumber }); } catch {}
   }
+  inMemoryOtpStore.delete(cleanPhone);
+  inMemoryOtpStore.delete(rawTrimmed);
 
   return {
     valid: true,

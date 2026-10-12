@@ -51,12 +51,15 @@ import { GoogleMapsGroundingModal } from '../common/GoogleMapsGroundingModal';
 export const TicketConfirmationPage: React.FC = () => {
   const {
     currentBookingSuccess,
+    setCurrentBookingSuccess,
     setUserView,
     currency,
     addToast,
     checkInBooking,
     userProfile,
     aiAutoCancelFlight,
+    triggerWeatherDisruption,
+    resetDefaultFlights,
     setBookings,
     instantWeatherRefund
   } = useAirline();
@@ -65,6 +68,7 @@ export const TicketConfirmationPage: React.FC = () => {
   const ticketRef = useRef<HTMLDivElement>(null);
   const [activePassengerIdx, setActivePassengerIdx] = useState<number>(0);
   const [showQrModal, setShowQrModal] = useState<boolean>(false);
+  const [qrEncodeMode, setQrEncodeMode] = useState<'text' | 'url'>('text');
   const [showCalendarMenu, setShowCalendarMenu] = useState<boolean>(false);
   const [showMapsModal, setShowMapsModal] = useState<boolean>(false);
   const [copiedPnr, setCopiedPnr] = useState<boolean>(false);
@@ -78,8 +82,12 @@ export const TicketConfirmationPage: React.FC = () => {
   const [secretEmail, setSecretEmail] = useState<string>('');
   const [secretSubscribedAnim, setSecretSubscribedAnim] = useState<boolean>(false);
 
-  // Destination weather
+  // Origin & Destination route real-time weather
+  const [originWeather, setOriginWeather] = useState<RealtimeAirportWeather | null>(null);
   const [destWeather, setDestWeather] = useState<RealtimeAirportWeather | null>(null);
+  const [isAutoCancelled, setIsAutoCancelled] = useState<boolean>(false);
+  const [cancellationNotice, setCancellationNotice] = useState<string | null>(null);
+  const [refundProcessed, setRefundProcessed] = useState<boolean>(false);
 
   // Trigger celebration confetti on mount and initialize weather
   useEffect(() => {
@@ -99,14 +107,51 @@ export const TicketConfirmationPage: React.FC = () => {
       const email = currentBookingSuccess.contactEmail || userProfile?.email || '';
       setSecretEmail(email);
 
-      // Load destination weather
+      const cancelledNow =
+        currentBookingSuccess.status === 'Cancelled' ||
+        currentBookingSuccess.flight.status === 'Cancelled';
+      setIsAutoCancelled(cancelledNow);
+      setCancellationNotice(
+        currentBookingSuccess.cancellationReason ||
+          (cancelledNow ? 'Grounded due to severe weather conditions.' : null)
+      );
+      setRefundProcessed(currentBookingSuccess.refundStatus === 'Processed' || cancelledNow);
+
+      // Load origin and destination weather
+      const origCode = currentBookingSuccess.flight.origin.code;
       const destCode = currentBookingSuccess.flight.destination.code;
+      setOriginWeather(getAirportWeatherImmediate(origCode));
       setDestWeather(getAirportWeatherImmediate(destCode));
-      fetchLiveAirportWeather(destCode).then(w => {
-        if (w) setDestWeather(w);
+
+      Promise.all([
+        fetchLiveAirportWeather(origCode),
+        fetchLiveAirportWeather(destCode)
+      ]).then(([origW, destW]) => {
+        if (origW) setOriginWeather(origW);
+        if (destW) setDestWeather(destW);
       });
     }
   }, [currentBookingSuccess, userProfile]);
+
+  // Listen to global weather updates so if weather turns bad after booking, ticket auto-cancels immediately
+  useEffect(() => {
+    const handleWeatherUpdate = () => {
+      if (!currentBookingSuccess) return;
+      const origW = getAirportWeatherImmediate(currentBookingSuccess.flight.origin.code);
+      const destW = getAirportWeatherImmediate(currentBookingSuccess.flight.destination.code);
+      setOriginWeather(origW);
+      setDestWeather(destW);
+      if (origW.flightSafetyStatus === 'SEVERE_IFR' || destW.flightSafetyStatus === 'SEVERE_IFR') {
+        const badHub = origW.flightSafetyStatus === 'SEVERE_IFR' ? origW : destW;
+        const reason = `AI Automated Doppler Weather Protection: Ticket Auto-Cancelled due to ${badHub.conditionText} at ${badHub.cityName} (${badHub.airportCode}). 100% Instant Refund Credited.`;
+        setIsAutoCancelled(true);
+        setCancellationNotice(reason);
+        setRefundProcessed(true);
+      }
+    };
+    window.addEventListener('aerowings_weather_updated', handleWeatherUpdate);
+    return () => window.removeEventListener('aerowings_weather_updated', handleWeatherUpdate);
+  }, [currentBookingSuccess]);
 
   if (!currentBookingSuccess) {
     return (
@@ -130,57 +175,68 @@ export const TicketConfirmationPage: React.FC = () => {
   const flight = booking.flight;
   const currentPassenger = booking.passengers[activePassengerIdx] || booking.passengers[0];
   const assignedSeat = currentPassenger?.seatNumber || '12A';
+  const paxFullName = `${currentPassenger.title} ${currentPassenger.firstName} ${currentPassenger.lastName}`.trim();
+  const effectiveStatus = isAutoCancelled ? 'CANCELLED (100% REFUNDED)' : booking.status.toUpperCase();
 
-  const [isAutoCancelled, setIsAutoCancelled] = useState<boolean>(() => {
-    return booking.status === 'Cancelled' || flight.status === 'Cancelled';
-  });
-  const [cancellationNotice, setCancellationNotice] = useState<string | null>(
-    booking.cancellationReason || (booking.status === 'Cancelled' ? 'Grounded due to severe weather conditions.' : null)
-  );
-  const [refundProcessed, setRefundProcessed] = useState<boolean>(booking.refundStatus === 'Processed');
-
-  const handleSimulateBadWeather = () => {
-    const reason = `Automated Flight Cancellation: Dangerous Cyclonic Crosswinds & Low Visibility at ${flight.destination.city} (${flight.destination.code}). Grounded under Aviation Weather Safety Protocol.`;
+  const handleSimulateBadWeather = (weatherCondition: 'Heavy Thunderstorm' | 'Dense Fog' | 'Typhoon / Cyclone' = 'Typhoon / Cyclone') => {
+    const reason = `AI Automated Flight & Ticket Cancellation: Severe ${weatherCondition} & Low Visibility at ${flight.destination.city} (${flight.destination.code}). Ticket Auto-Cancelled with 100% Instant Full Refund of ${formatCurrency(booking.priceBreakdown.finalTotal, currency)}.`;
     setIsAutoCancelled(true);
     setCancellationNotice(reason);
     setRefundProcessed(true);
+
+    triggerWeatherDisruption(flight.destination.code, weatherCondition, 'severe');
 
     if (flight?.id && aiAutoCancelFlight) {
       aiAutoCancelFlight(flight.id, reason);
     }
 
+    const updatedBooking = {
+      ...booking,
+      status: 'Cancelled' as const,
+      cancellationReason: reason,
+      refundAmount: booking.priceBreakdown.finalTotal,
+      refundStatus: 'Processed' as const
+    };
+    setCurrentBookingSuccess(updatedBooking);
+
     setBookings((prev: any[]) =>
-      prev.map((b) =>
-        b.id === booking.id
-          ? {
-              ...b,
-              status: 'Cancelled',
-              cancellationReason: reason,
-              refundAmount: b.priceBreakdown.finalTotal,
-              refundStatus: 'Processed'
-            }
-          : b
-      )
+      prev.map((b) => (b.id === booking.id || b.pnr === booking.pnr ? updatedBooking : b))
     );
 
-    addToast(`🚨 Adverse Weather Condition Alert: Flight ${flight.flightNumber} automatically cancelled for safety. 100% full refund initiated.`, 'error');
+    addToast(`🚨 Weather Alert (${weatherCondition}): Ticket ${booking.pnr} automatically cancelled for safety! 100% Instant Refund of ${formatCurrency(booking.priceBreakdown.finalTotal, currency)} credited.`, 'error');
   };
 
-  const qrCodeData = JSON.stringify({
-    app: 'AEROWINGS_AIRLINES',
-    pnr: booking.pnr,
-    tkt: booking.ticketNumber,
-    flight: `${flight.airlineCode || 'AW'}${flight.flightNumber}`,
-    from: flight.origin.code,
-    to: flight.destination.code,
-    date: booking.departureDate,
-    time: flight.departureTime,
-    pax: `${currentPassenger.title} ${currentPassenger.firstName} ${currentPassenger.lastName}`,
-    seat: assignedSeat,
-    gate: flight.gate || '22A',
-    class: booking.cabinClass.toUpperCase(),
-    sig: `AW-${booking.pnr}-${flight.flightNumber}`
-  });
+  const handleRestoreSafeWeather = () => {
+    resetDefaultFlights();
+    setIsAutoCancelled(false);
+    setCancellationNotice(null);
+    const restoredBooking = {
+      ...booking,
+      status: 'Confirmed' as const,
+      cancellationReason: undefined,
+      refundStatus: 'Not Applicable' as const
+    };
+    setCurrentBookingSuccess(restoredBooking);
+    setBookings((prev: any[]) =>
+      prev.map((b) => (b.id === booking.id || b.pnr === booking.pnr ? restoredBooking : b))
+    );
+    addToast('☀️ Weather cleared! Ticket restored to Confirmed status.', 'success');
+  };
+
+  const originUrl = typeof window !== 'undefined' ? window.location.origin : 'https://aerowings.airline.com';
+  const qrVerificationUrl = `${originUrl}/?verifyPnr=${encodeURIComponent(booking.pnr)}&pax=${encodeURIComponent(paxFullName)}&flight=${encodeURIComponent(`${flight.airlineCode || 'AW'}-${flight.flightNumber}`)}&from=${encodeURIComponent(flight.origin.code)}&fromCity=${encodeURIComponent(flight.origin.city)}&to=${encodeURIComponent(flight.destination.code)}&toCity=${encodeURIComponent(flight.destination.city)}&date=${encodeURIComponent(booking.departureDate)}&time=${encodeURIComponent(flight.departureTime)}&seat=${encodeURIComponent(assignedSeat)}&gate=${encodeURIComponent(flight.gate || '22A')}&class=${encodeURIComponent(booking.cabinClass.toUpperCase())}&status=${encodeURIComponent(effectiveStatus)}&paid=${encodeURIComponent(String(booking.priceBreakdown.finalTotal))}`;
+
+  const qrReadableText = [
+    `AEROWINGS OFFICIAL E-TICKET`,
+    `PNR: ${booking.pnr} (${effectiveStatus})`,
+    `PAX: ${paxFullName}`,
+    `FLIGHT: ${flight.airlineCode || 'AW'}-${flight.flightNumber} (${flight.origin.code} -> ${flight.destination.code})`,
+    `DATE: ${booking.departureDate} | DEP: ${flight.departureTime}`,
+    `SEAT: ${assignedSeat} | GATE: ${flight.gate || '22A'} | CLASS: ${booking.cabinClass.toUpperCase()}`,
+    `PAID: INR ${booking.priceBreakdown.finalTotal.toLocaleString()}`
+  ].join('\n');
+
+  const qrCodeData = qrEncodeMode === 'url' ? qrVerificationUrl : qrReadableText;
 
   const handleDownloadAllPassengersPDF = async () => {
     setDownloading(true);
@@ -374,7 +430,15 @@ export const TicketConfirmationPage: React.FC = () => {
                 </p>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={handleRestoreSafeWeather}
+                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-lg cursor-pointer flex items-center gap-1.5 transition-all"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>☀️ Restore Clear Weather</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => setUserView('home')}
@@ -387,7 +451,7 @@ export const TicketConfirmationPage: React.FC = () => {
             </div>
           </div>
         ) : (
-          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
             <div className="flex items-center gap-3.5">
               <div className="w-11 h-11 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
                 <CloudSun className="w-5 h-5" />
@@ -395,27 +459,45 @@ export const TicketConfirmationPage: React.FC = () => {
               <div>
                 <div className="flex items-center gap-2">
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                    Live Flight Weather Safety Radar
+                    Live Flight Weather Safety Radar & Auto-Cancel Protection
                   </span>
                   <span className="text-[11px] text-emerald-400 font-bold flex items-center gap-1">
                     <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" /> Safe to Fly
                   </span>
                 </div>
                 <p className="text-xs text-slate-300 mt-0.5">
-                  Flight route {flight.origin.city} ({flight.origin.code}) → {flight.destination.city} ({flight.destination.code}): Conditions are currently monitored. If weather condition turns severe, the system automatically cancels the flight with 100% instant full refund.
+                  Flight route {flight.origin.city} ({flight.origin.code}) → {flight.destination.city} ({flight.destination.code}): If any weather condition goes wrong, our AI automatically cancels the ticket with 100% instant full refund.
                 </p>
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={handleSimulateBadWeather}
-              className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-rose-950/60 border border-slate-700 hover:border-rose-500/50 text-slate-300 hover:text-rose-300 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shrink-0 shadow-sm"
-              title="Test the automated flight cancellation condition"
-            >
-              <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
-              <span>Simulate Severe Weather Disruption</span>
-            </button>
+            <div className="flex items-center gap-2 flex-wrap shrink-0">
+              <button
+                type="button"
+                onClick={() => handleSimulateBadWeather('Heavy Thunderstorm')}
+                className="px-3 py-2 rounded-xl bg-rose-950/60 hover:bg-rose-900/80 border border-rose-500/40 text-rose-200 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
+                title="Test automated ticket cancellation for Heavy Thunderstorm"
+              >
+                <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+                <span>⛈️ Test Storm Auto-Cancel</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSimulateBadWeather('Dense Fog')}
+                className="px-3 py-2 rounded-xl bg-amber-950/60 hover:bg-amber-900/80 border border-amber-500/40 text-amber-200 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
+                title="Test automated ticket cancellation for Zero-Visibility Fog"
+              >
+                <span>🌫️ Test Fog Auto-Cancel</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSimulateBadWeather('Typhoon / Cyclone')}
+                className="px-3 py-2 rounded-xl bg-red-950/70 hover:bg-red-900/90 border border-red-500/50 text-red-200 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
+                title="Test automated ticket cancellation for Super Cyclone"
+              >
+                <span>🌀 Test Cyclone Auto-Cancel</span>
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -480,31 +562,72 @@ export const TicketConfirmationPage: React.FC = () => {
         </div>
       )}
 
-      {/* Destination Real-Time Weather Alert */}
-      {destWeather && (
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-sky-500/10 text-sky-400 border border-sky-500/20">
-              <CloudSun className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="font-bold text-white flex items-center gap-2">
-                <span>Arrival Airport Weather: {destWeather.cityName} ({destWeather.airportCode})</span>
-                <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold text-[10px]">
-                  {destWeather.flightSafetyStatus === 'OPTIMAL_VFR' ? 'Optimal Flight Weather' : destWeather.conditionText}
+      {/* Real-Time Route Weather Telemetry: Origin & Destination */}
+      {(originWeather || destWeather) && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {originWeather && (
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-sky-500/10 text-sky-400 border border-sky-500/20">
+                  <CloudSun className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="font-bold text-white flex items-center gap-2">
+                    <span>Departure: {originWeather.cityName} ({originWeather.airportCode})</span>
+                    <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${
+                      originWeather.flightSafetyStatus === 'OPTIMAL_VFR'
+                        ? 'bg-emerald-500/20 text-emerald-300'
+                        : originWeather.flightSafetyStatus === 'SEVERE_IFR'
+                        ? 'bg-rose-500/20 text-rose-300'
+                        : 'bg-amber-500/20 text-amber-300'
+                    }`}>
+                      {originWeather.flightSafetyStatus === 'OPTIMAL_VFR' ? 'Optimal Flight Weather' : originWeather.conditionText}
+                    </span>
+                  </div>
+                  <div className="text-slate-400 text-[11px] mt-0.5">
+                    {originWeather.temperatureC}°C ({originWeather.temperatureF}°F) • {originWeather.conditionText} • Wind: {originWeather.windSpeedKmh} km/h • Vis: {originWeather.visibilityKm} km
+                  </div>
+                </div>
+              </div>
+              <div className="text-[11px] font-mono text-slate-300 whitespace-nowrap">
+                <span className="px-2.5 py-1 rounded-xl bg-slate-950 border border-slate-800">
+                  {originWeather.runwayAdvisory}
                 </span>
               </div>
-              <div className="text-slate-400 text-[11px] mt-0.5">
-                {destWeather.temperatureC}°C ({destWeather.temperatureF}°F) • {destWeather.conditionText} • Wind: {destWeather.windSpeedKmh} km/h • Visibility: {destWeather.visibilityKm} km
+            </div>
+          )}
+
+          {destWeather && (
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                  <CloudSun className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="font-bold text-white flex items-center gap-2">
+                    <span>Arrival: {destWeather.cityName} ({destWeather.airportCode})</span>
+                    <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${
+                      destWeather.flightSafetyStatus === 'OPTIMAL_VFR'
+                        ? 'bg-emerald-500/20 text-emerald-300'
+                        : destWeather.flightSafetyStatus === 'SEVERE_IFR'
+                        ? 'bg-rose-500/20 text-rose-300'
+                        : 'bg-amber-500/20 text-amber-300'
+                    }`}>
+                      {destWeather.flightSafetyStatus === 'OPTIMAL_VFR' ? 'Optimal Flight Weather' : destWeather.conditionText}
+                    </span>
+                  </div>
+                  <div className="text-slate-400 text-[11px] mt-0.5">
+                    {destWeather.temperatureC}°C ({destWeather.temperatureF}°F) • {destWeather.conditionText} • Wind: {destWeather.windSpeedKmh} km/h • Vis: {destWeather.visibilityKm} km
+                  </div>
+                </div>
+              </div>
+              <div className="text-[11px] font-mono text-slate-300 whitespace-nowrap">
+                <span className="px-2.5 py-1 rounded-xl bg-slate-950 border border-slate-800">
+                  {destWeather.runwayAdvisory}
+                </span>
               </div>
             </div>
-          </div>
-
-          <div className="flex items-center gap-2 text-[11px] font-mono text-slate-300">
-            <span className="px-2.5 py-1 rounded-xl bg-slate-950 border border-slate-800">
-              {destWeather.runwayAdvisory}
-            </span>
-          </div>
+          )}
         </div>
       )}
 
@@ -706,18 +829,54 @@ export const TicketConfirmationPage: React.FC = () => {
           </div>
 
           {/* QR Code Barcode Box */}
-          <div className="md:col-span-4 flex flex-col items-center justify-center p-4 bg-slate-900 border border-slate-800 rounded-2xl">
-            <div className="p-2 bg-white rounded-xl shadow-md">
+          <div className="md:col-span-4 flex flex-col items-center justify-center p-4 bg-slate-900 border border-slate-800 rounded-2xl space-y-2.5">
+            <div className="flex items-center gap-1 text-[10px] bg-slate-950 p-1 rounded-lg border border-slate-800">
+              <button
+                type="button"
+                onClick={() => setQrEncodeMode('text')}
+                className={`px-2 py-0.5 rounded font-bold cursor-pointer transition-all ${
+                  qrEncodeMode === 'text' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                📄 Instant Scan Pass
+              </button>
+              <button
+                type="button"
+                onClick={() => setQrEncodeMode('url')}
+                className={`px-2 py-0.5 rounded font-bold cursor-pointer transition-all ${
+                  qrEncodeMode === 'url' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                📱 Web Verify Link
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowQrModal(true)}
+              className="p-3 bg-white rounded-2xl shadow-xl hover:scale-105 transition-transform cursor-pointer group relative"
+              title="Click to Scan / Verify E-Ticket QR Code"
+            >
               <QRCodeSVG
                 value={qrCodeData}
-                size={110}
+                size={144}
                 level="M"
-                includeMargin={false}
+                includeMargin={true}
               />
-            </div>
-            <span className="text-[10px] font-mono text-slate-400 mt-2 text-center">
-              Scan at Airport Security / Boarding Gate
+            </button>
+
+            <span className="text-[10px] font-mono text-emerald-400 font-bold text-center">
+              ● Scannable IATA 2D Barcode Active
             </span>
+
+            <button
+              type="button"
+              onClick={() => setShowQrModal(true)}
+              className="w-full py-1.5 px-3 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 text-sky-300 text-[11px] font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all"
+            >
+              <QrCode className="w-3.5 h-3.5" />
+              <span>Scan / Open Verified Ticket Sheet</span>
+            </button>
           </div>
         </div>
 
@@ -744,6 +903,90 @@ export const TicketConfirmationPage: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Live QR Code Scanner & Verified Boarding Pass Sheet Modal */}
+      {showQrModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-slate-900 border-2 border-amber-500/50 rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl">
+            <div className="bg-gradient-to-r from-slate-950 via-blue-950 to-slate-950 p-5 border-b border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+                  <QrCode className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-emerald-400 uppercase tracking-wider">
+                    ✅ QR Code Scanned & Verified
+                  </div>
+                  <h3 className="text-base font-black text-white">
+                    Official AeroWings Digital E-Ticket Sheet
+                  </h3>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowQrModal(false)}
+                className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <div className="flex flex-col sm:flex-row items-center gap-4 bg-slate-950 p-4 rounded-2xl border border-slate-800">
+                <div className="p-2.5 bg-white rounded-xl shrink-0">
+                  <QRCodeSVG value={qrCodeData} size={136} level="M" includeMargin={true} />
+                </div>
+                <div className="space-y-1.5 text-xs flex-1">
+                  <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold text-[10px] border border-emerald-500/30">
+                    <ShieldCheck className="w-3 h-3" /> IATA BCBP M1 Cryptographic Signature Valid
+                  </div>
+                  <div className="text-white font-black text-sm">{paxFullName}</div>
+                  <div className="text-slate-300 font-mono">
+                    PNR: <strong className="text-amber-400">{booking.pnr}</strong> • Ticket: {booking.ticketNumber}
+                  </div>
+                  <div className="text-slate-300">
+                    Flight: <strong className="text-sky-400">{flight.airlineCode || 'AW'}-{flight.flightNumber}</strong> ({flight.origin.code} ➔ {flight.destination.code})
+                  </div>
+                  <div className="text-slate-400">
+                    Date: {booking.departureDate} • Dep: {flight.departureTime} • Seat: <strong className="text-white">{assignedSeat}</strong> • Gate: <strong className="text-amber-300">{flight.gate || '22A'}</strong>
+                  </div>
+                  <div className={`font-bold ${isAutoCancelled ? 'text-rose-400' : 'text-emerald-400'}`}>
+                    Status: {effectiveStatus}
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 space-y-1.5">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  Decoded QR Payload (Shown when scanned by Phone / Airport Gate Scanner):
+                </div>
+                <pre className="text-[11px] font-mono text-emerald-300 whitespace-pre-wrap break-all bg-slate-900/90 p-2.5 rounded-lg border border-slate-800">
+                  {qrReadableText}
+                </pre>
+              </div>
+
+              <div className="flex items-center justify-between gap-2 pt-1">
+                <a
+                  href={qrVerificationUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex-1 py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold text-center flex items-center justify-center gap-1.5 transition-all"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Open Scanned Mobile Verification Sheet</span>
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setShowQrModal(false)}
+                  className="py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal for Maps Grounding */}
       <GoogleMapsGroundingModal

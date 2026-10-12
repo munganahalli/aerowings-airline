@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAirline } from '../../context/AirlineContext';
+import { useLanguage } from '../../context/LanguageContext';
 import { processUserAiQuery } from '../../utils/aiConciergeEngine';
 import { airlineDB, ChatMessage } from '../../utils/airlineDatabase';
 import { aiVoice } from '../../utils/aiVoice';
@@ -111,15 +112,35 @@ export const AIConciergeChatbot: React.FC = () => {
     setCurrentBookingSuccess,
     searchParams,
     selectedFlight,
-    addToast
+    addToast,
+    aiLanguage,
+    setAiLanguage,
+    executeVoiceBooking
   } = useAirline();
+  const { language: websiteLang, setLanguage: setWebsiteLang } = useLanguage();
 
   const [isOpen, setIsOpen] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
-  const [selectedLang, setSelectedLang] = useState<AiLanguageCode>('en');
+  const [selectedLang, setSelectedLang] = useState<AiLanguageCode>(() => {
+    return aiLanguage || 'en';
+  });
   const [showLangMenu, setShowLangMenu] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [showMapsModal, setShowMapsModal] = useState(false);
+
+  // Sync selectedLang with global aiLanguage and websiteLang
+  useEffect(() => {
+    if (aiLanguage && aiLanguage !== selectedLang) {
+      setSelectedLang(aiLanguage);
+    }
+  }, [aiLanguage]);
+
+  useEffect(() => {
+    if (websiteLang && websiteLang !== selectedLang) {
+      setSelectedLang(websiteLang as AiLanguageCode);
+      setAiLanguage(websiteLang as AiLanguageCode);
+    }
+  }, [websiteLang]);
 
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     const saved = airlineDB.getChatHistory();
@@ -142,7 +163,9 @@ export const AIConciergeChatbot: React.FC = () => {
 
   const [inputVal, setInputVal] = useState('');
   const [isTyping, setIsTyping] = useState(false);
-  const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const [voiceEnabled, setVoiceEnabled] = useState(() => {
+    return !aiVoice.isMuted();
+  });
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
 
@@ -216,6 +239,9 @@ export const AIConciergeChatbot: React.FC = () => {
 
   const handleLanguageChange = (code: AiLanguageCode) => {
     setSelectedLang(code);
+    setAiLanguage(code);
+    setWebsiteLang(code as any);
+    aiVoice.setLanguage(code);
     setShowLangMenu(false);
     
     const welcome = WELCOME_MESSAGES[code] || WELCOME_MESSAGES.en;
@@ -230,6 +256,11 @@ export const AIConciergeChatbot: React.FC = () => {
     setMessages(prev => [...prev, switchNotice]);
     const langObj = LANGUAGE_OPTIONS.find(l => l.code === code);
     addToast(`AI Concierge language set to ${langObj?.nativeName} (${langObj?.name})`, 'success');
+
+    // Crystal-clear multilingual voice speaking
+    if (!aiVoice.isMuted()) {
+      aiVoice.testPronunciation(code);
+    }
   };
 
   const handleSendMessage = async (textToSend?: string) => {
@@ -268,6 +299,22 @@ export const AIConciergeChatbot: React.FC = () => {
 
       if (response.ok) {
         const data = await response.json();
+
+        // If Gemini called the process_flight_booking tool
+        if (data.functionCall && data.functionCall.name === 'process_flight_booking') {
+          const args = data.functionCall.args || {};
+          await executeVoiceBooking({
+            origin: searchParams.origin || 'DEL',
+            destination: searchParams.destination || 'BOM',
+            flightNumber: args.flightNumber || 'AW-302',
+            passengerName: args.passengerName || 'Valued Passenger',
+            recipientPhone: args.recipientPhone || '9876543210',
+            seatClass: args.seatClass || 'Economy',
+            totalPriceINR: args.totalPriceINR,
+            smsMessage: args.smsMessage
+          });
+        }
+
         const aiMsg: ChatMessage = {
           id: `ai-${Date.now()}`,
           sender: 'ai',
@@ -287,7 +334,7 @@ export const AIConciergeChatbot: React.FC = () => {
         setMessages(prev => [...prev, aiMsg]);
         setIsTyping(false);
 
-        if (voiceEnabled) {
+        if (voiceEnabled && data.reply) {
           const plainText = data.reply.replace(/[*_#`•●★]/g, '').trim();
           aiVoice.speak(plainText, { lang: selectedLang });
         }

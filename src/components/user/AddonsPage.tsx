@@ -97,10 +97,16 @@ export const AddonsPage: React.FC = () => {
           <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1">
             <div className="font-bold text-white flex items-center justify-between">
               <span>🧳 Check-in Luggage</span>
-              <span className="text-emerald-400 font-bold">15 kg / passenger</span>
+              <span className="text-emerald-400 font-bold">
+                {fare.extraFreeBaggageKg > 0
+                  ? `25 kg / passenger (15kg + ${fare.extraFreeBaggageKg}kg Student Free)`
+                  : '15 kg / passenger'}
+              </span>
             </div>
             <p className="text-slate-400 text-[11px]">
-              Drop this luggage at the airport airline counter during check-in. Retrieved upon arrival.
+              {fare.extraFreeBaggageKg > 0
+                ? 'Student Concession applied: Includes 15 kg standard + 10 kg extra student check-in baggage at ₹0 free!'
+                : 'Drop this luggage at the airport airline counter during check-in. Retrieved upon arrival.'}
             </p>
           </div>
         </div>
@@ -173,7 +179,7 @@ export const AddonsPage: React.FC = () => {
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {BAGGAGE_OPTIONS.map((bag) => {
-            const isSelected = passengers[0]?.extraBaggageKg === bag.weightKg;
+            const isSelected = passengers[0]?.extraBaggage === bag.weight;
 
             return (
               <button
@@ -181,10 +187,10 @@ export const AddonsPage: React.FC = () => {
                 type="button"
                 onClick={() => {
                   if (isSelected) {
-                    updatePassenger(0, { extraBaggageKg: 0, extraBaggagePrice: 0 });
+                    updatePassenger(0, { extraBaggage: undefined, baggagePrice: 0 });
                   } else {
-                    updatePassenger(0, { extraBaggageKg: bag.weightKg, extraBaggagePrice: bag.price });
-                    addToast(`Added +${bag.weightKg} kg Extra Baggage (+₹${bag.price})`, 'info');
+                    updatePassenger(0, { extraBaggage: bag.weight, baggagePrice: bag.price });
+                    addToast(`Added ${bag.label || bag.weight} Extra Baggage (+₹${bag.price})`, 'info');
                   }
                 }}
                 className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${

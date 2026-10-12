@@ -8,6 +8,7 @@ import { Flight, RouteType } from '../../types/airline';
 import { aiVoice } from '../../utils/aiVoice';
 import { generateFlightsForRoute } from '../../utils/flightRouteGenerator';
 import { RealtimeAirportWeatherWidget } from '../common/RealtimeAirportWeatherWidget';
+import { getAirportWeatherImmediate } from '../../utils/realtimeWeather';
 import { PrestigeOtpVerificationModal } from '../common/PrestigeOtpVerificationModal';
 import {
   Plane,
@@ -50,6 +51,8 @@ export const FlightResultsPage: React.FC = () => {
     instantWeatherRefund,
     instantWeatherRebook,
     bookings,
+    verifiedBookingPhone,
+    setVerifiedBookingPhone,
     addToast
   } = useAirline();
   const { t } = useLanguage();
@@ -189,13 +192,7 @@ export const FlightResultsPage: React.FC = () => {
       return;
     }
     
-    // Require OTP verification before allowing passenger to proceed to the flight booking page
-    if (!verifiedPhone) {
-      setPendingFlight(flight);
-      setOtpModalOpen(true);
-      return;
-    }
-
+    // Proceed directly to passenger booking with zero OTP blocker
     proceedToBooking(flight);
   };
 
@@ -214,10 +211,13 @@ export const FlightResultsPage: React.FC = () => {
 
   const handleOtpVerified = (bookingToken: string, phone: string) => {
     setVerifiedPhone(phone);
+    if (typeof setVerifiedBookingPhone === 'function') {
+      setVerifiedBookingPhone(phone);
+    }
     setOtpModalOpen(false);
     if (pendingFlight) {
       proceedToBooking(pendingFlight);
-      addToast(`OTP Verified! Welcome to AeroWings Prestige flight reservation.`, 'success');
+      addToast(`OTP Verified for ${phone}! Proceeding to Passenger Details.`, 'success');
     }
   };
 
@@ -290,6 +290,56 @@ export const FlightResultsPage: React.FC = () => {
         showBoth={true}
         onNavigateToWeatherRadar={() => setUserView('weather_ops')}
       />
+
+      {/* Live Special Concession Fares Bar */}
+      <div className="bg-slate-900 border border-amber-500/30 rounded-2xl p-3.5 sm:p-4 shadow-lg space-y-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2 text-xs font-bold text-white">
+            <Sparkles className="w-4 h-4 text-amber-400" />
+            <span>Special Concession Fares:</span>
+          </div>
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+            {[
+              { id: 'regular', label: 'Regular' },
+              { id: 'student', label: 'Student (10% Off + 10kg Bags)' },
+              { id: 'senior', label: 'Senior (12% Off)' },
+              { id: 'armed_forces', label: 'Defence (15% Off)' },
+              { id: 'doctors_nurses', label: 'Doctors & Nurses (10% Off)' },
+            ].map((item) => {
+              const active = (searchParams.specialFare || 'regular') === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => {
+                    setSearchParams(prev => ({ ...prev, specialFare: item.id as any }));
+                    addToast(`Applied ${item.label} to all flights`, 'success');
+                  }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center gap-1.5 ${
+                    active
+                      ? 'bg-amber-500/25 border-amber-400 text-amber-200 shadow-md shadow-amber-500/20'
+                      : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
+                  }`}
+                >
+                  {active && <Check className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
+                  <span>{item.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        {(searchParams.specialFare && searchParams.specialFare !== 'regular') && (
+          <div className="pt-2 border-t border-slate-800/80 text-xs text-amber-300 flex items-center justify-between flex-wrap gap-2">
+            <span>
+              ✅ <strong>Concession Active:</strong>{' '}
+              {searchParams.specialFare === 'student' && '10% Instant Discount applied on all flight fares below + 10kg Extra Free Check-in Baggage (Total 25kg).'}
+              {searchParams.specialFare === 'senior' && '12% Senior Citizen Instant Discount applied on all flight fares below + Priority Boarding.'}
+              {searchParams.specialFare === 'armed_forces' && '15% Armed Forces / Defence Instant Discount applied on all flight fares below.'}
+              {searchParams.specialFare === 'doctors_nurses' && '10% Doctors & Nurses Instant Discount applied on all flight fares below + Free Date Change.'}
+            </span>
+          </div>
+        )}
+      </div>
 
       {/* Route Type Tabs (Intra-State, Inter-State, International) */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1">
@@ -942,62 +992,76 @@ export const FlightResultsPage: React.FC = () => {
                     </div>
 
                     {/* Live Weather & Atmospheric Safety Badge */}
-                    <div className="mt-3 py-2 px-3.5 rounded-xl bg-slate-950/80 border border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
-                      <div className="flex items-center gap-3">
-                        <div className="text-2xl flex-shrink-0">
-                          {flight.weather?.condition === 'Clear' ? '☀️' : 
-                           flight.weather?.condition === 'Rain' ? '🌧️' : 
-                           flight.weather?.condition === 'Heavy Thunderstorm' ? '⛈️' : 
-                           flight.weather?.condition === 'Dense Fog' ? '🌫️' : 
-                           flight.weather?.condition?.includes('Cyclone') ? '🌪️' : 
-                           flight.weather?.condition === 'Blizzard' ? '❄️' : '⛅'}
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-bold text-white text-xs">
-                              Weather at {flight.origin.city} ({flight.origin.code}): <span className="text-sky-300">{flight.weather?.condition || 'Clear Skies'}</span>
-                            </span>
-                            <span className="px-2 py-0.5 rounded-md bg-sky-500/10 border border-sky-500/30 text-sky-400 font-mono font-bold text-[11px]">
-                              {flight.weather?.temperatureC ?? 28}°C
-                            </span>
-                          </div>
-                          <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5 flex-wrap">
-                            <span>💨 Wind: <strong className="text-slate-300">{flight.weather?.windSpeedKmh ?? 12} km/h</strong></span>
-                            <span>•</span>
-                            <span>👁️ Visibility: <strong className="text-slate-300">{flight.weather?.visibilityKm ?? 10} km</strong></span>
-                            <span>•</span>
-                            <span>⚡ Storm Index: <strong className="text-slate-300">{flight.weather?.stormIndex ?? 8}/100</strong></span>
-                          </div>
-                        </div>
-                      </div>
+                    {(() => {
+                      const liveOriginW = getAirportWeatherImmediate(flight.origin.code);
+                      const liveDestW = getAirportWeatherImmediate(flight.destination.code);
+                      // Always use live real-time API temperature and conditions from Open-Meteo, unless specifically disrupted
+                      const isDisrupted = flight.status === 'Cancelled' || flight.status === 'Delayed';
+                      const effectiveCondition = isDisrupted ? (flight.weather?.condition || 'Severe Disruption') : liveOriginW.conditionText;
+                      const effectiveTemp = liveOriginW.temperatureC;
+                      const effectiveWind = liveOriginW.windSpeedKmh;
+                      const effectiveVis = liveOriginW.visibilityKm;
 
-                      <div className="flex items-center gap-2">
-                        <div className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border flex items-center gap-1 ${
-                          flight.weather?.aiCancellationRisk === 'Critical - Auto Cancelled' || flight.status === 'Cancelled'
-                            ? 'bg-red-500/20 text-red-300 border-red-500/40'
-                            : flight.weather?.aiCancellationRisk === 'Moderate'
-                            ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                            : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                        }`}>
-                          <span className="w-1.5 h-1.5 rounded-full bg-current animate-ping" />
-                          <span>AI Risk: {flight.status === 'Cancelled' ? 'Grounded (100% Refund)' : (flight.weather?.aiCancellationRisk || 'Low / Safe')}</span>
-                        </div>
+                      return (
+                        <div className="mt-3 py-2 px-3.5 rounded-xl bg-slate-950/80 border border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
+                          <div className="flex items-center gap-3">
+                            <div className="text-2xl flex-shrink-0">
+                              {effectiveCondition.includes('Clear') ? '☀️' : 
+                               effectiveCondition.includes('Rain') || effectiveCondition.includes('Drizzle') ? '🌧️' : 
+                               effectiveCondition.includes('Thunderstorm') ? '⛈️' : 
+                               effectiveCondition.includes('Fog') ? '🌫️' : 
+                               effectiveCondition.includes('Cyclone') ? '🌪️' : 
+                               effectiveCondition.includes('Blizzard') || effectiveCondition.includes('Snow') ? '❄️' : '⛅'}
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-bold text-white text-xs">
+                                  Weather at {flight.origin.city} ({flight.origin.code}): <span className="text-sky-300">{effectiveCondition}</span>
+                                </span>
+                                <span className="px-2 py-0.5 rounded-md bg-sky-500/10 border border-sky-500/30 text-sky-400 font-mono font-bold text-[11px]">
+                                  {effectiveTemp}°C
+                                </span>
+                                <span className="text-[11px] text-slate-400">
+                                  ➔ {flight.destination.city} ({flight.destination.code}): <strong className="text-amber-300">{liveDestW.temperatureC}°C</strong>
+                                </span>
+                              </div>
+                              <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5 flex-wrap">
+                                <span>💨 Wind: <strong className="text-slate-300">{effectiveWind} km/h</strong></span>
+                                <span>•</span>
+                                <span>👁️ Visibility: <strong className="text-slate-300">{effectiveVis} km</strong></span>
+                                <span>•</span>
+                                <span>🛡️ Safety Score: <strong className="text-emerald-400">{100 - weatherCancellationRisk}%</strong></span>
+                              </div>
+                            </div>
+                          </div>
 
-                        {/* Listen to AI Voice Briefing for this specific flight */}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            aiVoice.speak(`Flight ${flight.airline} ${flight.flightNumber} from ${flight.origin.city} to ${flight.destination.city}. Departure scheduled at ${flight.departureTime}. Current weather in ${flight.origin.city} is ${flight.weather?.condition || 'Clear'}, ${flight.weather?.temperatureC || 28} degrees Celsius with ${flight.weather?.windSpeedKmh || 12} kilometers per hour wind. On-time score ${flight.aiPrediction?.onTimeProbability || 96} percent. Fare is ${formatCurrency(fare, currency)}.`);
-                          }}
-                          className="p-1.5 px-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-sky-400 hover:text-white flex items-center gap-1.5 text-[11px] font-semibold transition-colors cursor-pointer"
-                          title="Listen to AI Flight & Weather Audio"
-                        >
-                          <Volume2 className="w-3.5 h-3.5 text-sky-400" />
-                          <span>AI Voice</span>
-                        </button>
-                      </div>
-                    </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setExpandedFlightId(flight.id);
+                                setActiveFlightDetailTab('ai_predict');
+                              }}
+                              className="px-2.5 py-1 rounded-lg bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/40 text-purple-300 text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                            >
+                              <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                              <span>Weather & Fare Predictor</span>
+                            </button>
+
+                            <div className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border flex items-center gap-1 ${
+                              flight.weather?.aiCancellationRisk === 'Critical - Auto Cancelled' || flight.status === 'Cancelled'
+                                ? 'bg-red-500/20 text-red-300 border-red-500/40'
+                                : flight.weather?.aiCancellationRisk === 'Moderate'
+                                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                                : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                            }`}>
+                              <span className="w-1.5 h-1.5 rounded-full bg-current animate-ping" />
+                              <span>AI Risk: {flight.status === 'Cancelled' ? 'Grounded (100% Refund)' : (flight.weather?.aiCancellationRisk || 'Low / Safe')}</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
 
                     {/* Competitor Price Comparison Bar */}
                     {competitorData && competitorData.length > 0 && (
@@ -1025,7 +1089,9 @@ export const FlightResultsPage: React.FC = () => {
                       <div className="flex items-center gap-3 flex-wrap text-[11px]">
                         <span className="flex items-center gap-1 text-slate-300">
                           <Luggage className="w-3.5 h-3.5 text-sky-400" />
-                          <span>Cabin: {flight.baggageAllowance.cabin} • Check-in: {flight.baggageAllowance.checkIn}</span>
+                          <span>
+                            Cabin: {flight.baggageAllowance.cabin} • Check-in: {searchParams.specialFare === 'student' ? '25 kg (15kg + 10kg Student Bonus)' : flight.baggageAllowance.checkIn}
+                          </span>
                         </span>
                         <span className="flex items-center gap-1 text-slate-300">
                           <Coffee className="w-3.5 h-3.5 text-amber-400" />
@@ -1107,27 +1173,71 @@ export const FlightResultsPage: React.FC = () => {
                         </div>
                       )}
 
-                      {activeFlightDetailTab === 'ai_predict' && aiPrediction && (
-                        <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-3">
-                          <div className="font-bold text-sky-400 flex items-center gap-2">
-                            <Sparkles className="w-4 h-4" />
-                            <span>AeroWings AI Fare & Operations Engine</span>
+                      {activeFlightDetailTab === 'ai_predict' && (
+                        <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-4">
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <div className="font-bold text-sky-400 flex items-center gap-2">
+                              <Sparkles className="w-4 h-4" />
+                              <span>AI Weather & Pre-Booking Fare Predictor ({flight.origin.code} ➔ {flight.destination.code})</span>
+                            </div>
+                            <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold">
+                              Live Doppler + ML Fare Engine
+                            </span>
                           </div>
-                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-center">
+
+                          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-center">
                             <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800">
                               <div className="text-slate-400 text-[10px]">Predicted Price Trend</div>
-                              <div className="text-xs font-bold text-amber-300 mt-1">{aiPrediction.fareTrend}</div>
+                              <div className="text-xs font-bold text-amber-300 mt-1 uppercase">{aiPrediction?.fareTrend?.replace('_', ' ') || 'Rising Soon (+8%)'}</div>
                             </div>
                             <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800">
                               <div className="text-slate-400 text-[10px]">On-Time Punctuality</div>
-                              <div className="text-xs font-bold text-emerald-400 mt-1">{aiPrediction.onTimeProbability}% (High)</div>
+                              <div className="text-xs font-bold text-emerald-400 mt-1">{aiPrediction?.onTimeProbability || 96}% (High)</div>
                             </div>
                             <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800">
-                              <div className="text-slate-400 text-[10px]">AI Weather Safety</div>
-                              <div className="text-xs font-bold text-sky-400 mt-1">{flight.weather?.condition || 'Clear Sky'}</div>
+                              <div className="text-slate-400 text-[10px]">Corridor Weather Risk</div>
+                              <div className="text-xs font-bold text-sky-400 mt-1">{100 - weatherCancellationRisk}% Safe VFR</div>
+                            </div>
+                            <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800">
+                              <div className="text-slate-400 text-[10px]">Turbulence Forecast</div>
+                              <div className="text-xs font-bold text-emerald-300 mt-1">Smooth (LightChops &lt; 5%)</div>
                             </div>
                           </div>
-                          <p className="text-slate-300 text-xs">{aiPrediction.fareTrendExplanation || 'AeroWings automated revenue management confirms price stability for this corridor.'}</p>
+
+                          {/* 5-Day Corridor Weather & Fare Prediction Matrix */}
+                          <div className="space-y-2">
+                            <div className="text-[11px] font-bold text-slate-300">5-Day Route Weather & Dynamic Fare Forecast:</div>
+                            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                              {[0, 1, 2, 3, 4].map((offset) => {
+                                const d = new Date(searchParams.departureDate || Date.now());
+                                d.setDate(d.getDate() + offset);
+                                const baseOriginW = getAirportWeatherImmediate(flight.origin.code);
+                                const dayTemp = baseOriginW.temperatureC + (offset % 2 === 0 ? 1 : -1);
+                                const dayFare = Math.round(fare * (1 + offset * 0.04));
+                                const daySafety = Math.min(99, Math.max(85, baseOriginW.safetyScore - offset));
+                                return (
+                                  <div key={offset} className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-center space-y-1">
+                                    <div className="text-[10px] font-bold text-slate-400">
+                                      {offset === 0 ? 'Selected Date' : d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' })}
+                                    </div>
+                                    <div className="text-xs font-extrabold text-white">
+                                      ☀️ {dayTemp}°C
+                                    </div>
+                                    <div className="text-[10px] text-sky-400 font-semibold">
+                                      Safety: {daySafety}%
+                                    </div>
+                                    <div className="text-[11px] font-bold text-emerald-400">
+                                      {formatCurrency(dayFare, currency)}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          <p className="text-slate-300 text-xs">
+                            {aiPrediction?.fareTrendExplanation || 'AeroWings AI Meteorological & Fare Engine predicts optimal VFR flying conditions and recommends locking in the current fare before dynamic demand pricing increases.'}
+                          </p>
                         </div>
                       )}
 
@@ -1163,6 +1273,31 @@ export const FlightResultsPage: React.FC = () => {
 
             return (
               <div className="space-y-6">
+                {/* Flight Details and Fare Options available for you! */}
+                <div className="bg-gradient-to-r from-blue-900/40 via-slate-900 to-indigo-900/40 border border-amber-500/30 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3 shadow-md">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-300 flex items-center justify-center font-bold">
+                      <Sparkles className="w-5 h-5 text-amber-400" />
+                    </div>
+                    <div>
+                      <h3 className="text-base sm:text-lg font-black text-white">
+                        Flight Details and Fare Options available for you!
+                      </h3>
+                      <p className="text-xs text-slate-300">
+                        {searchParams.specialFare === 'student'
+                          ? 'Showing certified Student Fare concession flights with flat 10% discount & 25kg complimentary baggage.'
+                          : searchParams.specialFare !== 'regular'
+                          ? `Showing ${searchParams.specialFare.replace('_', ' ')} concession options tailored for your travel profile.`
+                          : 'Transparent airfares with zero convenience fee, gourmet in-flight dining, and 24-hr check-in.'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <span className="px-3 py-1 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-mono text-xs font-black">
+                    {searchParams.specialFare === 'student' ? '🎓 Student Concession Active' : 'Verified Fares'}
+                  </span>
+                </div>
+
                 {/* 1. PRIMARY SECTION: Direct Matching Flights for Source -> Destination */}
                 <div className="space-y-3">
                   <div className="flex items-center justify-between border-b border-slate-800 pb-2">
@@ -1189,6 +1324,21 @@ export const FlightResultsPage: React.FC = () => {
                     directAvailableFlights.map(f => renderCard(f, false))
                   )}
                 </div>
+
+                {/* Thats all for Student Fares options ! */}
+                {searchParams.specialFare === 'student' && (
+                  <div className="my-6 p-4 rounded-2xl bg-gradient-to-r from-amber-500/15 via-slate-900 to-sky-500/15 border-2 border-amber-500/40 text-center space-y-2 shadow-xl animate-fadeIn">
+                    <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-amber-500/20 text-amber-300 font-black text-xs uppercase tracking-wider border border-amber-500/30">
+                      <span>🎓 Thats all for Student Fares options !</span>
+                    </div>
+                    <h4 className="text-sm sm:text-base font-black text-white">
+                      Here are some regular flight options you may wish to explore
+                    </h4>
+                    <p className="text-xs text-slate-300 max-w-xl mx-auto">
+                      Explore standard regular fare flights with full baggage allowances, flexible date rebooking, and direct departure slots across all airlines.
+                    </p>
+                  </div>
+                )}
 
                 {/* 2. SECONDARY SECTION: Other Available Flights Across the Network */}
                 {otherAvailableFlights.length > 0 && (

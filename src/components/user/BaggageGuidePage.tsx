@@ -294,7 +294,7 @@ export const BaggageGuidePage: React.FC = () => {
         </section>
 
         {/* SECTION 3: RESTRICTED & HAZARDOUS ITEMS */}
-        <section>
+        <section id="dangerous-goods">
           <div className="text-center max-w-3xl mx-auto mb-10">
             <h2 className="text-2xl sm:text-3xl font-bold text-white mb-2">Restricted & Dangerous Goods</h2>
             <p className="text-slate-300 text-sm">

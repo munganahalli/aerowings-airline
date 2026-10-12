@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ShieldCheck, Phone, KeyRound, Clock, ArrowRight, RefreshCw, X, AlertCircle, CheckCircle2, Sparkles } from 'lucide-react';
+import { useAirline } from '../../context/AirlineContext';
 
 interface PrestigeOtpVerificationModalProps {
   isOpen: boolean;
@@ -19,7 +20,9 @@ export const PrestigeOtpVerificationModal: React.FC<PrestigeOtpVerificationModal
   onVerified,
   flightSummary
 }) => {
-  const [phone, setPhone] = useState<string>('+91 98765 43210');
+  const { addToast, verifiedBookingPhone, setVerifiedBookingPhone } = useAirline();
+  const [phone, setPhone] = useState<string>(verifiedBookingPhone || '+91 8971541794');
+  const [targetFormattedPhone, setTargetFormattedPhone] = useState<string>('');
   const [step, setStep] = useState<'request' | 'verify'>('request');
   const [otpDigits, setOtpDigits] = useState<string[]>(['', '', '', '', '', '']);
   const [timeLeft, setTimeLeft] = useState<number>(300); // 5 minutes in seconds
@@ -51,22 +54,39 @@ export const PrestigeOtpVerificationModal: React.FC<PrestigeOtpVerificationModal
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
+  const normalizePhoneForOtp = (raw: string) => {
+    const cleaned = raw.trim();
+    const digitsOnly = cleaned.replace(/\D/g, '');
+    if (cleaned.startsWith('+')) {
+      return `+${digitsOnly}`;
+    }
+    if (digitsOnly.length === 10) {
+      return `+91${digitsOnly}`;
+    }
+    if (digitsOnly.length === 12 && digitsOnly.startsWith('91')) {
+      return `+${digitsOnly}`;
+    }
+    return `+${digitsOnly}`;
+  };
+
   const handleSendOtp = async () => {
-    if (!phone || phone.trim().length < 8) {
-      setErrorMsg('Please provide a valid mobile number with country code (e.g. +91 9876543210)');
+    if (!phone || phone.replace(/\D/g, '').length < 8) {
+      setErrorMsg('Please provide a valid mobile number (e.g. +91 9876543210)');
       return;
     }
 
+    const normalized = normalizePhoneForOtp(phone);
     setIsSending(true);
     setErrorMsg(null);
     setSuccessMsg(null);
+    setOtpDigits(['', '', '', '', '', '']);
 
     try {
       const response = await fetch('/api/otp/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          phoneNumber: phone.trim(),
+          phoneNumber: normalized,
           purpose: 'flight_booking'
         })
       });
@@ -77,14 +97,19 @@ export const PrestigeOtpVerificationModal: React.FC<PrestigeOtpVerificationModal
         throw new Error(data.error || 'Failed to dispatch 6-digit OTP.');
       }
 
+      const generatedOtp = String(data.otp || data.fallbackOtp || data.devPreviewOtp || '');
+      const formattedPhone = data.phoneNumber || normalized;
+
+      setTargetFormattedPhone(formattedPhone);
       setStep('verify');
       setTimeLeft(300); // Strict 5-minute MongoDB TTL
-      setSuccessMsg('Secure 6-digit OTP sent via SMS gateway!');
-      if (data.devPreviewOtp) {
-        setDevOtp(data.devPreviewOtp);
-      }
+      setDevOtp(generatedOtp);
+      const alertText = `OTP sent to ${formattedPhone}: ${generatedOtp}`;
+      setSuccessMsg(alertText);
+      addToast(alertText, 'success');
+
       if (data.smsDelivery) {
-        setSmsDeliveryStatus(data.smsDelivery.provider || 'SMS Gateway');
+        setSmsDeliveryStatus(data.smsDelivery.provider || 'Twilio SMS Gateway');
       }
 
       // Auto focus first OTP digit input
@@ -99,6 +124,21 @@ export const PrestigeOtpVerificationModal: React.FC<PrestigeOtpVerificationModal
   };
 
   const handleOtpChange = (index: number, val: string) => {
+    const digitsOnly = val.replace(/\D/g, '');
+    if (digitsOnly.length > 1) {
+      // Handle full 6-digit paste
+      const pasted = digitsOnly.slice(0, 6).split('');
+      const next = ['', '', '', '', '', ''];
+      pasted.forEach((d, i) => {
+        next[i] = d;
+      });
+      setOtpDigits(next);
+      setErrorMsg(null);
+      const focusIdx = Math.min(5, pasted.length - 1);
+      digitInputRefs.current[focusIdx]?.focus();
+      return;
+    }
+
     const char = val.slice(-1);
     if (char && !/^\d$/.test(char)) return;
 
@@ -138,6 +178,15 @@ export const PrestigeOtpVerificationModal: React.FC<PrestigeOtpVerificationModal
       return;
     }
 
+    const phoneToVerify = targetFormattedPhone || normalizePhoneForOtp(phone);
+
+    if (devOtp && fullOtp !== devOtp) {
+      const msg = `Invalid OTP code. Please enter the exact 6-digit OTP sent to ${phoneToVerify}: ${devOtp}`;
+      setErrorMsg(msg);
+      addToast(msg, 'error');
+      return;
+    }
+
     setIsVerifying(true);
     setErrorMsg(null);
 
@@ -146,21 +195,29 @@ export const PrestigeOtpVerificationModal: React.FC<PrestigeOtpVerificationModal
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          phoneNumber: phone.trim(),
+          phoneNumber: phoneToVerify,
           otp: fullOtp
         })
       });
 
       const data = await response.json();
 
-      if (!response.ok || !data.verified) {
+      if (!response.ok || (!data.verified && !data.success)) {
         throw new Error(data.error || 'Verification failed. Incorrect OTP.');
       }
 
       setSuccessMsg('OTP verified successfully! Clearance granted.');
+      if (typeof setVerifiedBookingPhone === 'function') {
+        setVerifiedBookingPhone(phoneToVerify);
+      }
+      try {
+        localStorage.setItem('aerowings_linked_phone', phoneToVerify);
+      } catch {
+        // ignore storage error
+      }
       setTimeout(() => {
-        onVerified(data.bookingToken || 'verified_token', phone.trim());
-      }, 600);
+        onVerified(data.bookingToken || 'verified_token', phoneToVerify);
+      }, 400);
     } catch (err: any) {
       setErrorMsg(err?.message || 'Verification error. Please verify the 6-digit code.');
     } finally {
@@ -316,10 +373,10 @@ export const PrestigeOtpVerificationModal: React.FC<PrestigeOtpVerificationModal
                 type="button"
                 onClick={handleSendOtp}
                 disabled={isSending}
-                className="text-[11px] text-amber-400 hover:text-amber-300 cursor-pointer flex items-center gap-1 disabled:opacity-50"
+                className="text-[11px] text-amber-400 hover:text-amber-300 cursor-pointer flex items-center gap-1 disabled:opacity-50 font-semibold"
               >
                 <RefreshCw className={`w-3 h-3 ${isSending ? 'animate-spin' : ''}`} />
-                <span>Resend OTP</span>
+                <span>Resend OTP to Phone</span>
               </button>
             </div>
 

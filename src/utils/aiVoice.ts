@@ -336,6 +336,179 @@ export function toPhoneticPronunciation(text: string, lang: AiLanguageCode): str
   return result;
 }
 
+// Automatic multilingual phrase localization for system and user navigation announcements
+function localizeCommonAnnouncement(text: string, lang: AiLanguageCode): string {
+  if (lang === 'en' || !text) return text;
+  // If text already contains Indic/Arabic scripts, preserve authentic native text
+  if (/[\u0900-\u0D7F\u0600-\u06FF]/.test(text)) return text;
+
+  const lower = text.toLowerCase();
+  
+  if (lower.includes('step 1') || lower.includes('step 1:')) {
+    const map: Record<string, string> = {
+      kn: 'ಹಂತ 1: ನಿಮ್ಮ ಆದ್ಯತೆಯ ವಿಮಾನ ಮತ್ತು ಕ್ಯಾಬಿನ್ ಆಯ್ಕೆಮಾಡಿ. 100% ತಕ್ಷಣ ಮರುಪಾವತಿ ರಕ್ಷಣೆ ಸಕ್ರಿಯವಾಗಿದೆ.',
+      te: 'దశ 1: మీ ప్రాధాన్య విమానాన్ని ఎంచుకోండి. 100% తక్షణ రీఫండ్ రక్షణ కలదు.',
+      ta: 'படி 1: உங்கள் விருப்பமான விமானத்தைத் தேர்ந்தெடுக்கவும். 100% உடனடி பணத்தைத் திரும்பப் பெறுதல் பாதுகாப்பு.',
+      hi: 'चरण 1: अपनी पसंदीदा उड़ान का चयन करें। 100% तत्काल रिफंड सुरक्षा सक्रिय है।',
+      ml: 'സ്റ്റെപ്പ് 1: നിങ്ങളുടെ ഫ്ലൈറ്റ് തിരഞ്ഞെടുക്കുക.',
+      mr: 'पायरी 1: आपली आवडती फ्लाईट निवडा. 100% परतावा हमी लागू.',
+      bn: 'ধাপ ১: আপনার পছন্দের ফ্লাইট নির্বাচন করুন।',
+      gu: 'સ્ટેપ ૧: તમારી પસંદગીની ફ્લાઇટ પસંદ કરો. ૧૦૦% રિફંડ ગેરંટી ઉપલબ્ધ છે.',
+      fr: 'Étape 1: Choisissez votre vol avec garantie de remboursement.',
+      es: 'Paso 1: Elija su vuelo con garantía de reembolso instantáneo.',
+      de: 'Schritt 1: Wählen Sie Ihren Flug mit 100% Rückerstattungsgarantie.',
+      ar: 'الخطوة 1: اختر رحلتك المفضلة مع ضمان استرداد الأموال بنسبة 100%.'
+    };
+    return map[lang] || text;
+  }
+
+  if (lower.includes('step 2') || lower.includes('step 2:')) {
+    const map: Record<string, string> = {
+      kn: 'ಹಂತ 2: ಪ್ರಯಾಣಿಕರ ವಿವರಗಳು ಮತ್ತು ಆಧಾರ್ ಅಥವಾ ಪಾಸ್‌ಪೋರ್ಟ್ ದಾಖಲೆ ಪರಿಶೀಲನೆ.',
+      te: 'దశ 2: ప్రయాణికుల వివరాలు మరియు ఆధార్ లేదా పాస్‌పోర్ట్ ధృవీకరణ.',
+      ta: 'படி 2: பயணிகள் விவரங்கள் மற்றும் ஆதார் அல்லது பாஸ்போர்ட் சரிபார்ப்பு.',
+      hi: 'चरण 2: यात्री विवरण और पहचान पत्र का सत्यापन करें।',
+      ml: 'സ്റ്റെപ്പ് 2: യാത്രക്കാരുടെ വിവരങ്ങളും രേഖകളും നൽകുക.',
+      mr: 'पायरी 2: प्रवासी माहिती आणि आधार/पासपोर्ट पडताळणी.',
+      bn: 'ধাপ ২: যাত্রীদের বিবরণ এবং পরিচয় যাচাইকরণ।',
+      gu: 'સ્ટેપ ૨: મુસાફરોની વિગતો અને આધાર/પાસપોર્ટ ચકાસણી.',
+      fr: 'Étape 2: Renseignez les coordonnées des passagers et les pièces d\'identité.',
+      es: 'Paso 2: Ingrese los datos de los pasajeros y documentos oficiales.',
+      de: 'Schritt 2: Passagierdaten und Ausweisdokumente eingeben.',
+      ar: 'الخطوة 2: بيانات المسافرين والتحقق من الهوية.'
+    };
+    return map[lang] || text;
+  }
+
+  if (lower.includes('step 3') || lower.includes('step 3:')) {
+    const map: Record<string, string> = {
+      kn: 'ಹಂತ 3: ಕ್ಯಾಬಿನ್ ಸೀಟ್ ಆಯ್ಕೆ. ನಿಮ್ಮ ನೆಚ್ಚಿನ ಆಸನವನ್ನು ಆಯ್ಕೆಮಾಡಿ.',
+      te: 'దశ 3: క్యాబిన్ సీటు ఎంపిక. కిటికీ లేదా నడవ సీటును ఎంచుకోండి.',
+      ta: 'படி 3: இருக்கை தேர்வு. உங்களுக்குப் பிடித்த இருக்கையைத் தேர்ந்தெடுக்கவும்.',
+      hi: 'चरण 3: सीट चयन। अपनी पसंदीदा खिड़की या गलियारे वाली सीट चुनें।',
+      ml: 'സ്റ്റെപ്പ് 3: നിങ്ങളുടെ ಇരിപ്പിടം തിരഞ്ഞെടുക്കുക.',
+      mr: 'पायरी 3: सीट निवड. विंडो किंवा आयल सीट निवडा.',
+      bn: 'ধাপ ৩: আসন নির্বাচন করুন। আপনার পছন্দের উইন্ডো বা আইল আসন বেছে নিন।',
+      gu: 'સ્ટેપ ૩: સીટ પસંદગી કરો.',
+      fr: 'Étape 3: Choix de vos sièges en cabine.',
+      es: 'Paso 3: Selección de asientos en cabina.',
+      de: 'Schritt 3: Sitzplatzwahl in der Kabine.',
+      ar: 'الخطوة 3: اختيار المقاعد في المقصورة.'
+    };
+    return map[lang] || text;
+  }
+
+  if (lower.includes('step 4') || lower.includes('step 4:')) {
+    const map: Record<string, string> = {
+      kn: 'ಹಂತ 4: ಉಚಿತ ಲಗೇಜ್ ಮತ್ತು ಊಟದ ಆಯ್ಕೆ. 7 ಕೆಜಿ ಕ್ಯಾಬಿನ್ ಮತ್ತು 15 ಕೆಜಿ ಚೆಕ್-ಇನ್ ಉಚಿತ.',
+      te: 'దశ 4: ఉచిత లగేజీ మరియు భోజన ఎంపికలు. 7 కేజీల క్యాಬಿನ್ మరియు 15 కేజీల ಚೆಕ್-ಇನ್ ಉಚಿತಂ.',
+      ta: 'படி 4: இலவச லக்கேஜ் மற்றும் உணவுத் தேர்வுகள்.',
+      hi: 'चरण 4: सामान और भोजन चयन। 7 किग्रा केबिन और 15 किग्रा चेक-इन सामान शामिल है।',
+      ml: 'സ്റ്റെപ്പ് 4: ലഗേജ്, ഭക്ഷണ തിരഞ്ഞെടുപ്പുകൾ.',
+      mr: 'पायरी 4: सामान आणि जेवण पर्याय.',
+      bn: 'ধাপ ৪: লাগেজ ও খাবার পছন্দ।',
+      gu: 'સ્ટેપ ૪: બેગેજ અને ભોજન વિકલ્પો.',
+      fr: 'Étape 4: Bagages et repas à bord inclus.',
+      es: 'Paso 4: Equipaje y comidas a bordo.',
+      de: 'Schritt 4: Freigepäck und Bordverpflegung.',
+      ar: 'الخطوة 4: الأمتعة والوجبات على متن الطائرة.'
+    };
+    return map[lang] || text;
+  }
+
+  if (lower.includes('step 5') || lower.includes('step 5:')) {
+    const map: Record<string, string> = {
+      kn: 'ಹಂತ 5: ಪರಿಶೀಲನೆ ಮತ್ತು ಸುರಕ್ಷಿತ ಪಾವತಿ. 100% ತಕ್ಷಣ ಮರುಪಾವತಿ ರಕ್ಷಣೆ ಸಕ್ರಿಯವಾಗಿದೆ.',
+      te: 'దశ 5: మీ ప్రయాణ సమీక్ష మరియు సురಕ್ಷಿತ చెల్లింపు. 100% ತಕ್ಷಣ ರೀಫಂಡ್ పాలసీ కలదు.',
+      ta: 'படி 5: மதிப்பாய்வு மற்றும் பாதுகாப்பான கட்டணம். 100% உடனடி பணத்தைத் திரும்பப் பெறுதல் பாதுகாப்பு.',
+      hi: 'चरण 5: समीक्षा और सुरक्षित भुगतान। 100% त्वरित रिफंड सुरक्षा सक्रिय है।',
+      ml: 'സ്റ്റെപ്പ് 5: അവലോകനവും സുരക്ഷിത പേയ്‌മെന്റും.',
+      mr: 'पायरी 5: पुनरावलोकन आणि सुरक्षित देयक. 100% परतावा संरक्षण.',
+      bn: 'ধাপ ৫: বিবরণ পর্যালোচনা এবং নিরাপদ পেমেন্ট।',
+      gu: 'સ્ટેપ ૫: સમીક્ષા અને સુરક્ષಿತ ચુકવણી.',
+      fr: 'Étape 5: Récapitulatif et paiement sécurisé.',
+      es: 'Paso 5: Resumen y pago seguro.',
+      de: 'Schritt 5: Buchungsübersicht und sichere Zahlung.',
+      ar: 'الخطوة 5: مراجعة الرحلة والدفع الآمن.'
+    };
+    return map[lang] || text;
+  }
+
+  if (lower.includes('verification incomplete') || lower.includes('visa verification are mandatory')) {
+    const map: Record<string, string> = {
+      kn: 'ಪರಿಶೀಲನೆ ಅಪೂರ್ಣವಾಗಿದೆ. ಮುಂದುವರಿಯಲು ದಯವಿಟ್ಟು ಪ್ರಯಾಣಿಕರ ವಿವರಗಳು ಮತ್ತು ಆಧಾರ್/ಪಾಸ್‌ಪೋರ್ಟ್ ದಾಖಲೆಗಳನ್ನು ಪೂರ್ಣಗೊಳಿಸಿ.',
+      te: 'ధృవీకరణ అసంపూర్ణంగా ఉంది. దయచేసి వివరాలను నమోదు చేయండి.',
+      ta: 'சரிபார்ப்பு முழுமையடையவில்லை. பயணிகளின் விவரங்களை நிரப்பவும்.',
+      hi: 'सत्यापन अधूरा है। कृपया आगे बढ़ने से पहले यात्री विवरण और पहचान पत्र की जांच करें।',
+      ml: 'പരിശോധന അപൂർണ്ണമാണ്. ദയവായി വിവരങ്ങൾ നൽകുക.',
+      mr: 'पडताळणी अपूर्ण आहे. कृपया माहिती पूर्ण करा.',
+      bn: 'যাচাইকরণ অসম্পূর্ণ। অনুগ্রহ করে বিবরণ পূরণ করুন।',
+      gu: 'ચકાસણી અધૂરી છે. કૃપા કરીને વિગતો પૂર્ણ કરો.',
+      fr: 'Vérification incomplète. Veuillez compléter vos coordonnées.',
+      es: 'Verificación incompleta. Por favor complete los datos.',
+      de: 'Überprüfung unvollständig. Bitte vervollständigen Sie die Daten.',
+      ar: 'التحقق غير مكتمل. يرجى إدخال البيانات المطلوبة.'
+    };
+    return map[lang] || text;
+  }
+
+  if (lower.includes('verified successfully') || lower.includes('verified.')) {
+    const map: Record<string, string> = {
+      kn: 'ಪ್ರಯಾಣಿಕರ ದಾಖಲೆಗಳು ಯಶಸ್ವಿಯಾಗಿ ಪರಿಶೀಲಿಸಲಾಗಿದೆ.',
+      te: 'ప్రయాణీకుల పత్రాలు విజయవంతంగా ధృవీకరించబడ్డాయి.',
+      ta: 'பயணிகள் ஆவணங்கள் வெற்றிகரமாக சரிபார்க்கப்பட்டன.',
+      hi: 'यात्री पहचान दस्तावेज सफलतापूर्वक सत्यापित हो गए हैं।',
+      ml: 'യാത്രക്കാരുടെ രേഖകൾ വിജയകരമായി പരിശോധിച്ചു.',
+      mr: 'प्रवासी कागदपत्रे यशस्वीरित्या पडताळली गेली आहेत.',
+      bn: 'যাত্রীদের নথি সফলভাবে যাচাই করা হয়েছে।',
+      gu: 'મુસાફરોની વિગતો સફળતાપૂર્વક ચકાસવામાં આવી છે.',
+      fr: 'Documents des passagers vérifiés avec succès.',
+      es: 'Documentos de los pasajeros verificados con éxito.',
+      de: 'Passagierdokumente erfolgreich überprüft.',
+      ar: 'تم التحقق من وثائق المسافرين بنجاح.'
+    };
+    return map[lang] || text;
+  }
+
+  if (lower.includes('proceeding to seat selection') || lower.includes('seat selection')) {
+    const map: Record<string, string> = {
+      kn: 'ದಾಖಲೆಗಳು ಪರಿಶೀಲಿಸಲಾಗಿದೆ. ಆಸನ ಆಯ್ಕೆಗೆ ಮುಂದುವರಿಯಲಾಗುತ್ತಿದೆ.',
+      te: 'పత్రాలు ధృవీకరించబడ్డాయి. సీటు ఎంపికకు వెళ్తున్నాము.',
+      ta: 'ஆவணங்கள் சரிபார்க்கப்பட்டன. இருக்கை தேர்வுக்கு செல்கிறோம்.',
+      hi: 'दस्तावेज सत्यापित। अब सीट चयन की ओर बढ़ रहे हैं।',
+      ml: 'രേഖകൾ പരിശോധിച്ചു. ഇരിപ്പിടം തിരഞ്ഞെടുക്കലിലേക്ക് പോകുന്നു.',
+      mr: 'कागदपत्रे पडताळली. आता सीट निवडीकडे जात आहोत.',
+      bn: 'নথি যাচাই সম্পন্ন। আসন নির্বাচনে এগিয়ে যাচ্ছি।',
+      gu: 'દસ્તાવેજો ચકાસાયા. હવે સીટ પસંદગી તરફ જઈ રહ્યા છીએ.',
+      fr: 'Documents vérifiés. Passage à la sélection des sièges.',
+      es: 'Documentos verificados. Pasando a la selección de asientos.',
+      de: 'Dokumente überprüft. Weiter zur Sitzplatzwahl.',
+      ar: 'تم التحقق من الوثائق. الانتقال إلى اختيار المقاعد.'
+    };
+    return map[lang] || text;
+  }
+
+  if (lower.includes('booking is confirmed') || lower.includes('payment authorized') || lower.includes('otp verified')) {
+    const map: Record<string, string> = {
+      kn: 'ಪಾವತಿ ಅನುಮೋದಿಸಲಾಗಿದೆ! ನಿಮ್ಮ ಏರೋವಿಂಗ್ಸ್ ವಿಮಾನ ಬುಕಿಂಗ್ ದೃಢೀಕರಿಸಲಾಗಿದೆ ಮತ್ತು ಇ-ಟಿಕೆಟ್ ಸಿದ್ಧವಾಗಿದೆ.',
+      te: 'చెల్లింపు పూర్తయింది! మీ ఏరోవిಂಗ್స్ విమాన బుకింగ్ ధృవీకరించబడింది మరియు ఇ-టికెట్ సిద్ధంగా ఉంది.',
+      ta: 'கட்டணம் செலுத்தப்பட்டது! உங்கள் ஏರೋவிங்ಸ್ விமான முன்பதிவு உறுதி செய்யப்பட்டது மற்றும் மின்-டிக்கெட் தயாராக உள்ளது.',
+      hi: 'भुगतान सफल! आपकी एयरोविंग्स उड़ान बुकिंग की पुष्टि हो गई है और ई-टिकट तैयार है।',
+      ml: 'പേയ്‌മെന്റ് വിജയകരം! നിങ്ങളുടെ എയ്റോവിങ്സ് ഫ്ലൈറ്റ് ബുക്കിംഗ് സ്ഥിരീകരിച്ചു.',
+      mr: 'पेमेंट यशस्वी! आपली एरोविंग्स फ्लाईट बुकिंग पुष्टी झाली आहे आणि ई-तिकीट तयार आहे.',
+      bn: 'পেমেন্ট সম্পন্ন! আপনার অ্যারোউইংস ফ্লাইট বুকিং নিশ্চিত হয়েছে এবং ই-টিকিট প্রস্তুত।',
+      gu: 'ચુકવણી સફળ! તમારી એરોવિંગ્સ ફ્લાઇટ બુકિંગની પુષ્ટિ થઈ ગઈ છે.',
+      fr: 'Paiement autorisé ! Votre réservation AeroWings est confirmée.',
+      es: '¡Pago autorizado! Su reserva de vuelo está confirmada.',
+      de: 'Zahlung autorisiert! Ihre Flugbuchung ist bestätigt.',
+      ar: 'تم الدفع بنجاح! تم تأكيد حجز رحلتكم.'
+    };
+    return map[lang] || text;
+  }
+
+  return text;
+}
+
 class AIVoiceEngine {
   private isMutedState: boolean = false;
   private isSpeakingState: boolean = false;
@@ -345,6 +518,7 @@ class AIVoiceEngine {
   private availableVoices: SpeechSynthesisVoice[] = [];
   private voicesLoaded: boolean = false;
   private currentUtterance: SpeechSynthesisUtterance | null = null;
+  private currentAudio: HTMLAudioElement | null = null;
 
   constructor() {
     if (typeof window !== 'undefined') {
@@ -399,31 +573,31 @@ class AIVoiceEngine {
     this.refreshVoices();
 
     const searchLocales = LANGUAGE_LOCALE_MAP[langCode] || ['en-US', 'en'];
+    const twoLetterCode = langCode.toLowerCase().slice(0, 2);
 
-    // 1. Direct match by exact lang prefix or name
+    // 1. Direct match by exact lang tag or voice name
     for (const prefix of searchLocales) {
+      const lowerPrefix = prefix.toLowerCase();
       const exactMatch = this.availableVoices.find(
-        v => v.lang.toLowerCase() === prefix.toLowerCase() || v.name.toLowerCase().includes(prefix.toLowerCase())
+        v => v.lang.toLowerCase() === lowerPrefix || v.name.toLowerCase().includes(lowerPrefix)
       );
       if (exactMatch) {
         return { voice: exactMatch, isNativeVoice: true };
       }
     }
 
-    // 2. Starts-with locale match (e.g. "kn" in "kn-IN")
-    for (const prefix of searchLocales) {
-      const startsMatch = this.availableVoices.find(
-        v => v.lang.toLowerCase().startsWith(prefix.toLowerCase().slice(0, 2))
-      );
-      if (startsMatch) {
-        return { voice: startsMatch, isNativeVoice: true };
-      }
+    // 2. Match by 2-letter ISO language prefix on v.lang (e.g. "kn" in "kn-IN")
+    const startsMatch = this.availableVoices.find(
+      v => v.lang.toLowerCase().startsWith(twoLetterCode + '-') || v.lang.toLowerCase() === twoLetterCode
+    );
+    if (startsMatch) {
+      return { voice: startsMatch, isNativeVoice: true };
     }
 
-    // 3. If Indian language and no specific voice found, look for any Indian voice (e.g. en-IN or hi-IN)
+    // 3. If Indian language and no specific native voice found, look for any Indian voice (hi-IN or en-IN)
     if (['kn', 'te', 'ta', 'hi', 'ml', 'mr', 'bn', 'gu'].includes(langCode)) {
       const indianVoice = this.availableVoices.find(
-        v => v.lang.toLowerCase().includes('in') || v.name.toLowerCase().includes('india')
+        v => v.lang.toLowerCase().includes('-in') || v.lang.toLowerCase().includes('_in') || v.name.toLowerCase().includes('india')
       );
       if (indianVoice) {
         return { voice: indianVoice, isNativeVoice: false };
@@ -431,7 +605,7 @@ class AIVoiceEngine {
     }
 
     // 4. Default to cleanest English voice
-    const defaultVoice = this.availableVoices.find(v => v.lang.startsWith('en')) || this.availableVoices[0] || null;
+    const defaultVoice = this.availableVoices.find(v => v.lang.toLowerCase().startsWith('en')) || this.availableVoices[0] || null;
     return { voice: defaultVoice, isNativeVoice: false };
   }
 
@@ -468,9 +642,8 @@ class AIVoiceEngine {
     try {
       localStorage.setItem('aerowings_ai_voice_muted', muted ? 'true' : 'false');
     } catch {}
-    if (muted && typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      this.isSpeakingState = false;
+    if (muted) {
+      this.stop();
       this.currentTextState = '';
     }
     this.notify();
@@ -486,54 +659,46 @@ class AIVoiceEngine {
   }
 
   public stop() {
+    if (this.currentAudio) {
+      try {
+        this.currentAudio.pause();
+        this.currentAudio.currentTime = 0;
+      } catch {}
+      this.currentAudio = null;
+    }
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
+      try {
+        window.speechSynthesis.cancel();
+      } catch {}
     }
     this.isSpeakingState = false;
     this.notify();
   }
 
-  public speak(
-    rawText: string,
+  private speakViaBrowserSynthesis(
+    text: string,
+    lang: AiLanguageCode,
     options?: {
-      lang?: AiLanguageCode;
-      interrupt?: boolean;
       rate?: number;
       pitch?: number;
       onStart?: () => void;
       onEnd?: () => void;
     }
   ) {
-    const lang = options?.lang || this.currentLanguageState || 'en';
-    this.currentLanguageState = lang;
-    const text = sanitizeSpeechText(rawText);
-    this.currentTextState = text;
-
-    if (this.isMutedState || !text) {
-      this.notify();
-      return;
-    }
-
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      this.isSpeakingState = false;
       this.notify();
+      options?.onEnd?.();
       return;
     }
 
     try {
-      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-        if (window.speechSynthesis.paused) {
-          window.speechSynthesis.resume();
-        }
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
       }
-
-      if (options?.interrupt !== false) {
-        window.speechSynthesis.cancel();
-      }
+      window.speechSynthesis.cancel();
 
       const { voice, isNativeVoice } = this.findVoiceForLanguage(lang);
-      // If client browser does not have a native voice for this language,
-      // speaking raw Indic/non-Latin script causes silence or broken clicks in English voices.
-      // Convert seamlessly to crystal-clear phonetic pronunciation!
       const textToUtter = (lang === 'en' || isNativeVoice) ? text : toPhoneticPronunciation(text, lang);
       const utterance = new SpeechSynthesisUtterance(textToUtter);
       this.currentUtterance = utterance;
@@ -542,19 +707,14 @@ class AIVoiceEngine {
         utterance.voice = voice;
         utterance.lang = voice.lang;
       } else {
-        const defaultLocale = LANGUAGE_LOCALE_MAP[lang]?.[0] || 'en-US';
-        utterance.lang = defaultLocale;
+        utterance.lang = LANGUAGE_LOCALE_MAP[lang]?.[0] || 'en-US';
       }
 
-      // Optimal pacing per language for pristine, natural cadence
       if (['kn', 'te', 'ta', 'ml'].includes(lang)) {
         utterance.rate = options?.rate ?? 0.92;
         utterance.pitch = options?.pitch ?? 1.02;
       } else if (['hi', 'mr', 'gu', 'bn'].includes(lang)) {
         utterance.rate = options?.rate ?? 0.95;
-        utterance.pitch = options?.pitch ?? 1.0;
-      } else if (['fr', 'de', 'es'].includes(lang)) {
-        utterance.rate = options?.rate ?? 0.98;
         utterance.pitch = options?.pitch ?? 1.0;
       } else {
         utterance.rate = options?.rate ?? 1.0;
@@ -562,7 +722,6 @@ class AIVoiceEngine {
       }
 
       utterance.volume = 1.0;
-
       this.isSpeakingState = true;
       this.notify();
 
@@ -579,21 +738,124 @@ class AIVoiceEngine {
         options?.onEnd?.();
       };
 
-      utterance.onerror = (e) => {
-        console.warn('Speech synthesis event:', e);
+      utterance.onerror = () => {
         this.isSpeakingState = false;
         this.currentUtterance = null;
         this.notify();
         options?.onEnd?.();
       };
 
-      window.speechSynthesis.speak(utterance);
+      setTimeout(() => {
+        try {
+          window.speechSynthesis.speak(utterance);
+        } catch {}
+      }, 40);
     } catch (err) {
-      console.warn('Voice speak error:', err);
       this.isSpeakingState = false;
       this.notify();
       options?.onEnd?.();
     }
+  }
+
+  public getLocalizedGreeting(langCode?: AiLanguageCode): string {
+    const lang = langCode || this.currentLanguageState || 'en';
+    const greetings: Record<string, string> = {
+      en: 'Welcome to AeroWings Airlines! Multilingual website and AI voice assistant are now set to English.',
+      hi: 'एरोविंग्स एयरलाइंस में आपका स्वागत है! वेबसाइट और वॉयस असिस्टेंट अब हिंदी में सक्रिय हैं।',
+      kn: 'ಏರೋವಿಂಗ್ಸ್ ಏರ್‌ಲೈನ್ಸ್‌ಗೆ ಸ್ವಾಗತ! ವೆಬ್‌ಸೈಟ್ ಮತ್ತು ಧ್ವನಿ ಸಹಾಯಕ ಈಗ ಕನ್ನಡದಲ್ಲಿ ಸಕ್ರಿಯವಾಗಿದೆ.',
+      te: 'ఏరోవింగ్స్ ఎయిర్‌లైన్స్‌కు స్వాగతం! వెబ్‌సೈట్ మరియు వాయిస్ అసిస్టెంట్ ఇప్పుడు తెలుగులో అందుబాటులో ఉన్నాయి.',
+      ta: 'ஏரோவிங்ஸ் ஏர்லைன்ஸுக்கு வரவேற்கிறோம்! இணையதளம் மற்றும் குரல் உதவியாளர் இப்போது தமிழில் செயல்படுகின்றன.',
+      ml: 'എയറോവിംഗ്സ് എയർലൈൻസിലേക്ക് സ്വാഗതം! വെബ്സൈറ്റും വോയ്സ് അസിസ്റ്റന്റും ഇപ്പോൾ മലയാളത്തിലാണ്.',
+      mr: 'एरोविंग्स एअरलाइन्समध्ये आपले स्वागत आहे! वेबसाईट आणि व्हॉइस असिस्टंट आता मराठीत सक्रिय आहेत.',
+      bn: 'অ্যারোউইংস এয়ারলাইন্সে স্বাগতম! ওয়েবসাইট এবং ভয়েস অ্যাসিস্ট্যান্ট এখন বাংলায় সক্রিয়।',
+      gu: 'એરોવિંગ્સ એરલાઇન્સમાં આપનું સ્વાગત છે! વેબસાઇટ અને વૉઇસ આસિસ્ટન્ટ હવે ગુજરાતીમાં સક્રિય છે.',
+      es: '¡Bienvenido a AeroWings Airlines! El sitio web y el asistente de voz ahora están en español.',
+      fr: 'Bienvenue chez AeroWings Airlines ! Le site web et l’assistant vocal sont désormais en français.'
+    };
+    return greetings[lang] || greetings.en;
+  }
+
+  public speak(
+    rawText: string,
+    optionsOrInterrupt?:
+      | boolean
+      | {
+          lang?: AiLanguageCode;
+          interrupt?: boolean;
+          rate?: number;
+          pitch?: number;
+          onStart?: () => void;
+          onEnd?: () => void;
+        },
+    optionalLang?: AiLanguageCode
+  ) {
+    const options =
+      typeof optionsOrInterrupt === 'boolean'
+        ? { interrupt: optionsOrInterrupt, lang: optionalLang }
+        : optionsOrInterrupt;
+    const lang = optionalLang || options?.lang || this.currentLanguageState || 'en';
+    this.currentLanguageState = lang;
+    const sanitized = sanitizeSpeechText(rawText);
+    const text = localizeCommonAnnouncement(sanitized, lang);
+    this.currentTextState = text;
+
+    if (this.isMutedState || !text) {
+      this.notify();
+      return;
+    }
+
+    if (typeof window === 'undefined') {
+      this.notify();
+      return;
+    }
+
+    if (options?.interrupt !== false) {
+      this.stop();
+    }
+
+    // For non-English regional languages (or when native voice is not installed in browser),
+    // use our high-clarity /api/ai/tts stream first so Kannada, Telugu, Hindi, Tamil, etc. speak in authentic native voice!
+    const { isNativeVoice } = this.findVoiceForLanguage(lang);
+    const shouldUseCloudTts = lang !== 'en' || !isNativeVoice;
+
+    if (shouldUseCloudTts && typeof Audio !== 'undefined') {
+      try {
+        const ttsUrl = `/api/ai/tts?lang=${encodeURIComponent(lang)}&text=${encodeURIComponent(text.slice(0, 200))}`;
+        const audio = new Audio(ttsUrl);
+        this.currentAudio = audio;
+        this.isSpeakingState = true;
+        this.notify();
+
+        audio.onplay = () => {
+          this.isSpeakingState = true;
+          this.notify();
+          options?.onStart?.();
+        };
+
+        audio.onended = () => {
+          this.isSpeakingState = false;
+          this.currentAudio = null;
+          this.notify();
+          options?.onEnd?.();
+        };
+
+        audio.onerror = () => {
+          this.currentAudio = null;
+          // Fallback to browser speech synthesis if cloud audio fails
+          this.speakViaBrowserSynthesis(text, lang, options);
+        };
+
+        audio.play().catch(() => {
+          this.currentAudio = null;
+          this.speakViaBrowserSynthesis(text, lang, options);
+        });
+        return;
+      } catch {
+        // Fallback to browser speech synthesis
+      }
+    }
+
+    this.speakViaBrowserSynthesis(text, lang, options);
   }
 
   // Real-Time API narration for booking workflow

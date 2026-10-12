@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { SupportedLanguage, SUPPORTED_LANGUAGES, TRANSLATIONS, LanguageOption } from '../i18n/translations';
+import { aiVoice } from '../utils/aiVoice';
 
 interface LanguageContextType {
   language: SupportedLanguage;
@@ -17,7 +18,7 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [language, setLanguageState] = useState<SupportedLanguage>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved && (saved === 'en' || saved === 'es' || saved === 'fr' || saved === 'hi')) {
+      if (saved && SUPPORTED_LANGUAGES.some((l) => l.code === saved)) {
         return saved as SupportedLanguage;
       }
     } catch {
@@ -31,6 +32,8 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     try {
       localStorage.setItem(STORAGE_KEY, lang);
       document.documentElement.lang = lang;
+      aiVoice.setLanguage(lang as any);
+      window.dispatchEvent(new CustomEvent('aerowings_website_language_sync', { detail: lang }));
     } catch {
       // ignore
     }
@@ -38,18 +41,45 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   useEffect(() => {
     document.documentElement.lang = language;
+    aiVoice.setLanguage(language as any);
   }, [language]);
+
+  useEffect(() => {
+    const handleAiLangSync = (e: Event) => {
+      const customEvent = e as CustomEvent<string>;
+      const newLang = customEvent.detail;
+      if (newLang && SUPPORTED_LANGUAGES.some((l) => l.code === newLang)) {
+        setLanguageState(newLang as SupportedLanguage);
+        try {
+          localStorage.setItem(STORAGE_KEY, newLang);
+          document.documentElement.lang = newLang;
+        } catch {
+          // ignore
+        }
+      }
+    };
+    window.addEventListener('aerowings_ai_language_sync', handleAiLangSync);
+    return () => window.removeEventListener('aerowings_ai_language_sync', handleAiLangSync);
+  }, []);
 
   const t = (key: string, fallback?: string): string => {
     const langDict = TRANSLATIONS[language];
     if (langDict && langDict[key]) {
       return langDict[key];
     }
-    // Fallback to English
     if (TRANSLATIONS.en && TRANSLATIONS.en[key]) {
       return TRANSLATIONS.en[key];
     }
-    return fallback || key;
+    if (fallback) {
+      return fallback;
+    }
+    // Automatic self-healing formatter so raw keys like 'nav.flightStatus' never appear on screen
+    const rawSegment = key.includes('.') ? key.split('.').pop() || key : key;
+    return rawSegment
+      .replace(/([A-Z])/g, ' $1')
+      .replace(/[_-]+/g, ' ')
+      .replace(/^\w/, (c) => c.toUpperCase())
+      .trim();
   };
 
   const currentLanguageOption = SUPPORTED_LANGUAGES.find((l) => l.code === language) || SUPPORTED_LANGUAGES[0];

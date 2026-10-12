@@ -139,7 +139,7 @@ export const HelpContactPage: React.FC = () => {
       {/* Main Container */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-12 space-y-16">
         {/* Contact Channels Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div id="care-desk" className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 flex flex-col justify-between">
             <div>
               <div className="w-12 h-12 rounded-xl bg-blue-500/10 text-blue-400 flex items-center justify-center mb-4">
@@ -190,7 +190,7 @@ export const HelpContactPage: React.FC = () => {
         </div>
 
         {/* SECTION 1: SEARCHABLE FAQS */}
-        <section className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-10 shadow-2xl">
+        <section id="faq-section" className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-10 shadow-2xl">
           <h2 className="text-xl sm:text-2xl font-bold text-white mb-6">
             Frequently Asked Questions ({filteredFaqs.length})
           </h2>
@@ -220,7 +220,7 @@ export const HelpContactPage: React.FC = () => {
         </section>
 
         {/* SECTION 2: SUBMIT A SUPPORT TICKET */}
-        <section className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-10">
+        <section id="ticket-section" className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-10">
           <div className="max-w-2xl mx-auto">
             <div className="text-center mb-8">
               <h2 className="text-2xl sm:text-3xl font-bold text-white mb-2">

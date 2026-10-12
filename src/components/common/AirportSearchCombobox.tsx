@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Airport } from '../../types/airline';
+import { registerCustomAirport } from '../../data/mockData';
 import { Search, MapPin, X, Check, Plane, Globe, Building2, ChevronDown } from 'lucide-react';
 
 interface AirportSearchComboboxProps {
@@ -25,26 +26,28 @@ export const AirportSearchCombobox: React.FC<AirportSearchComboboxProps> = ({
 }) => {
   const [isOpen, setIsOpen] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [selectedCategory, setSelectedCategory] = useState<'all' | 'intra_state' | 'domestic' | 'international'>('all');
+  const [selectedCategory, setSelectedCategory] = useState<'all' | 'india' | 'gulf' | 'europe' | 'americas' | 'apac' | 'africa'>('all');
   const [highlightedIndex, setHighlightedIndex] = useState<number>(0);
-  const [showAllPlaces, setShowAllPlaces] = useState<boolean>(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const selectedAirport = airports.find(a => a.code.toUpperCase() === value.toUpperCase()) || airports[0];
 
-  // Helper to categorize airports
-  const getAirportCategory = (airport: Airport): 'intra_state' | 'domestic' | 'international' => {
-    const intraStateCodes = ['BOM', 'PNQ', 'NAG', 'MAA', 'CJB', 'IXM', 'TRZ', 'BLR', 'IXE', 'AMD', 'STV', 'JAI', 'UDR', 'CCU', 'IXB', 'LKO', 'VNS'];
-    const intlCodes = ['DXB', 'LHR', 'SIN', 'BKK', 'CDG', 'FRA', 'HND', 'JFK', 'SFO', 'SYD', 'YYZ'];
+  // Helper to categorize airports by geographical region
+  const getAirportCategory = (airport: Airport): 'india' | 'gulf' | 'europe' | 'americas' | 'apac' | 'africa' => {
+    const gulfCodes = ['DXB', 'AUH', 'DOH', 'KWI', 'RUH', 'JED', 'MCT', 'BAH', 'SHJ', 'DMM'];
+    const europeCodes = ['LHR', 'LGW', 'MAN', 'CDG', 'ORY', 'FRA', 'MUC', 'AMS', 'ZRH', 'FCO', 'MAD', 'BCN', 'IST', 'VIE', 'DUB', 'CPH', 'ARN', 'BRU', 'LIS', 'PRG', 'WAW', 'ATH'];
+    const americasCodes = ['JFK', 'EWR', 'SFO', 'ORD', 'LAX', 'SEA', 'DFW', 'BOS', 'ATL', 'MIA', 'YYZ', 'YVR', 'YUL', 'GRU', 'MEX'];
+    const apacCodes = ['SIN', 'BKK', 'HKT', 'KUL', 'DPS', 'CGK', 'HKG', 'HND', 'NRT', 'ICN', 'SYD', 'MEL', 'BNE', 'PER', 'AKL', 'TPE', 'PVG', 'KIX', 'MNL', 'HAN', 'SGN'];
+    const africaCodes = ['CAI', 'NBO', 'JNB', 'CPT', 'MRU', 'MLE', 'SEZ', 'CMB', 'KTM', 'DAC'];
 
-    if (intlCodes.includes(airport.code) || airport.country !== 'India') {
-      return 'international';
-    }
-    if (intraStateCodes.includes(airport.code)) {
-      return 'intra_state';
-    }
-    return 'domestic';
+    if (airport.country === 'India') return 'india';
+    if (gulfCodes.includes(airport.code)) return 'gulf';
+    if (europeCodes.includes(airport.code)) return 'europe';
+    if (americasCodes.includes(airport.code)) return 'americas';
+    if (apacCodes.includes(airport.code)) return 'apac';
+    if (africaCodes.includes(airport.code)) return 'africa';
+    return 'apac';
   };
 
   // Close dropdown on outside click
@@ -65,34 +68,43 @@ export const AirportSearchCombobox: React.FC<AirportSearchComboboxProps> = ({
     }
 
     const category = getAirportCategory(airport);
-    if (selectedCategory !== 'all' && category !== selectedCategory) {
+    // When no search query, respect category tab; when typing a query, search globally across all countries & states
+    if (!searchQuery.trim() && selectedCategory !== 'all' && category !== selectedCategory) {
       return false;
     }
 
     if (!searchQuery.trim()) return true;
 
     const q = searchQuery.toLowerCase().trim();
-    return (
-      airport.code.toLowerCase().includes(q) ||
-      airport.city.toLowerCase().includes(q) ||
-      airport.name.toLowerCase().includes(q) ||
-      (airport.state && airport.state.toLowerCase().includes(q)) ||
-      (airport.country && airport.country.toLowerCase().includes(q))
+    const qAliases: string[] = [q];
+    if (q === 'usa' || q === 'us') qAliases.push('united states', 'america');
+    if (q === 'uk') qAliases.push('united kingdom', 'england', 'britain');
+    if (q === 'uae') qAliases.push('emirates', 'dubai', 'abu dhabi', 'sharjah');
+    if (q === 'singapore') qAliases.push('sin');
+    if (q === 'japan') qAliases.push('tokyo', 'osaka');
+    if (q === 'france') qAliases.push('paris');
+    if (q === 'germany') qAliases.push('frankfurt', 'munich', 'berlin');
+    if (q === 'australia') qAliases.push('sydney', 'melbourne', 'brisbane', 'perth');
+    if (q === 'canada') qAliases.push('toronto', 'vancouver', 'montreal');
+
+    return qAliases.some(alias =>
+      airport.code.toLowerCase().includes(alias) ||
+      airport.city.toLowerCase().includes(alias) ||
+      airport.name.toLowerCase().includes(alias) ||
+      (airport.state && airport.state.toLowerCase().includes(alias)) ||
+      (airport.country && airport.country.toLowerCase().includes(alias))
     );
   });
 
-  // Showing less places: default to top 5 premier destinations unless explicitly expanded
-  const popularHubCodes = ['DEL', 'BOM', 'BLR', 'DXB', 'LHR', 'SIN'];
-  const curatedAirports = !searchQuery.trim()
+  // All matching airports available in smooth scrollable list
+  const popularHubCodes = ['DEL', 'BOM', 'BLR', 'MAA', 'CCU', 'HYD', 'DXB', 'LHR', 'SIN', 'JFK'];
+  const visibleAirports = !searchQuery.trim()
     ? [...filteredAirports].sort((a, b) => {
         const aPop = popularHubCodes.includes(a.code) ? 1 : 0;
         const bPop = popularHubCodes.includes(b.code) ? 1 : 0;
         return bPop - aPop;
       })
     : filteredAirports;
-
-  const visibleAirports = showAllPlaces ? curatedAirports : curatedAirports.slice(0, 5);
-  const hiddenPlacesCount = Math.max(0, curatedAirports.length - visibleAirports.length);
 
   const handleSelectAirport = (code: string) => {
     onChange(code);
@@ -222,10 +234,13 @@ export const AirportSearchCombobox: React.FC<AirportSearchComboboxProps> = ({
             {/* Category Filter Pills */}
             <div className="mt-2 flex items-center gap-1 text-[11px] overflow-x-auto pb-0.5">
               {[
-                { id: 'all', label: 'All Airports' },
-                { id: 'intra_state', label: '🏡 Regional' },
-                { id: 'domestic', label: '🇮🇳 Domestic' },
-                { id: 'international', label: '✈️ International' }
+                { id: 'all', label: 'All Destinations' },
+                { id: 'india', label: '🇮🇳 India (All States)' },
+                { id: 'gulf', label: '🌍 Middle East' },
+                { id: 'europe', label: '🇪🇺 Europe' },
+                { id: 'americas', label: '🇺🇸 Americas' },
+                { id: 'apac', label: '🌏 Asia-Pacific' },
+                { id: 'africa', label: '🌍 Africa & Islands' }
               ].map(cat => (
                 <button
                   key={cat.id}
@@ -247,88 +262,103 @@ export const AirportSearchCombobox: React.FC<AirportSearchComboboxProps> = ({
           </div>
 
           {/* Airport Results List */}
-          <div className="max-h-64 overflow-y-auto divide-y divide-slate-800/60 p-1">
+          <div className="max-h-72 overflow-y-auto divide-y divide-slate-800/60 p-1">
             {visibleAirports.length === 0 ? (
-              <div className="p-6 text-center text-slate-400 text-xs">
-                <p className="font-semibold text-slate-300">No airports found matching &quot;{searchQuery}&quot;</p>
-                <p className="text-[11px] text-slate-500 mt-1">Try searching city name like &apos;Delhi&apos;, &apos;Mumbai&apos;, or code &apos;DEL&apos;</p>
+              <div className="p-4 text-center text-slate-400 text-xs space-y-2.5">
+                <p className="font-semibold text-slate-300">No preset hub matching &quot;{searchQuery}&quot;</p>
+                {searchQuery.trim().length >= 2 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const customAirport = registerCustomAirport(searchQuery.trim());
+                      handleSelectAirport(customAirport.code);
+                    }}
+                    className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-amber-500/20 to-sky-500/20 hover:from-amber-500/30 hover:to-sky-500/30 border border-amber-500/40 text-amber-200 font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-all shadow-lg"
+                  >
+                    <Plane className="w-4 h-4 text-amber-400" />
+                    <span>✈️ Fly Live to &quot;{searchQuery.trim()}&quot; (Guaranteed Live Flight)</span>
+                  </button>
+                )}
               </div>
             ) : (
-              visibleAirports.map((airport, idx) => {
-                const isSelected = airport.code.toUpperCase() === value.toUpperCase();
-                const isHighlighted = idx === highlightedIndex;
-                const cat = getAirportCategory(airport);
+              <>
+                {visibleAirports.map((airport, idx) => {
+                  const isSelected = airport.code.toUpperCase() === value.toUpperCase();
+                  const isHighlighted = idx === highlightedIndex;
+                  const cat = getAirportCategory(airport);
 
-                return (
-                  <button
-                    key={airport.code}
-                    type="button"
-                    onClick={() => handleSelectAirport(airport.code)}
-                    onMouseEnter={() => setHighlightedIndex(idx)}
-                    className={`w-full p-2.5 rounded-xl text-left flex items-center justify-between gap-2 transition-all cursor-pointer ${
-                      isSelected
-                        ? 'bg-amber-500/20 text-white border border-amber-500/40 shadow-sm'
-                        : isHighlighted
-                        ? 'bg-slate-800/80 text-white'
-                        : 'text-slate-300 hover:bg-slate-800/50'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-8 h-8 rounded-lg bg-slate-950 border border-amber-500/20 flex items-center justify-center font-mono font-bold text-xs text-amber-400 shrink-0 shadow-inner">
-                        {airport.code}
-                      </div>
-                      <div className="truncate">
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-bold text-xs text-white truncate">
-                            {airport.city}
-                          </span>
-                          <span className="text-[10px] text-slate-400">
-                            ({airport.state || airport.country})
-                          </span>
-                          {cat === 'international' ? (
-                            <span className="px-1.5 py-0.2 rounded text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/30 font-medium">
-                              Prestige Intl
-                            </span>
-                          ) : cat === 'intra_state' ? (
-                            <span className="px-1.5 py-0.2 rounded text-[9px] bg-purple-500/20 text-purple-300 font-medium">
-                              Regional
-                            </span>
-                          ) : (
-                            <span className="px-1.5 py-0.2 rounded text-[9px] bg-emerald-500/20 text-emerald-300 font-medium">
-                              Domestic
-                            </span>
-                          )}
+                  return (
+                    <button
+                      key={airport.code}
+                      type="button"
+                      onClick={() => handleSelectAirport(airport.code)}
+                      onMouseEnter={() => setHighlightedIndex(idx)}
+                      className={`w-full p-2.5 rounded-xl text-left flex items-center justify-between gap-2 transition-all cursor-pointer ${
+                        isSelected
+                          ? 'bg-amber-500/20 text-white border border-amber-500/40 shadow-sm'
+                          : isHighlighted
+                          ? 'bg-slate-800/80 text-white'
+                          : 'text-slate-300 hover:bg-slate-800/50'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-8 h-8 rounded-lg bg-slate-950 border border-amber-500/20 flex items-center justify-center font-mono font-bold text-xs text-amber-400 shrink-0 shadow-inner">
+                          {airport.code}
                         </div>
-                        <p className="text-[10px] text-slate-400 truncate mt-0.5">
-                          {airport.name}
-                        </p>
+                        <div className="truncate">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-xs text-white truncate">
+                              {airport.city}
+                            </span>
+                            <span className="text-[10px] text-slate-400">
+                              ({airport.country === 'India' ? (airport.state || 'India') : airport.country})
+                            </span>
+                            {cat !== 'india' ? (
+                              <span className="px-1.5 py-0.2 rounded text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/30 font-medium">
+                                Intl Hub
+                              </span>
+                            ) : (
+                              <span className="px-1.5 py-0.2 rounded text-[9px] bg-emerald-500/20 text-emerald-300 font-medium">
+                                Domestic
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-slate-400 truncate mt-0.5">
+                            {airport.name}
+                          </p>
+                        </div>
                       </div>
+
+                      {isSelected && (
+                        <Check className="w-4 h-4 text-amber-400 shrink-0 mr-1" />
+                      )}
+                    </button>
+                  );
+                })}
+                {searchQuery.trim().length >= 2 &&
+                  !visibleAirports.some(a => a.city.toLowerCase() === searchQuery.trim().toLowerCase()) && (
+                    <div className="p-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const customAirport = registerCustomAirport(searchQuery.trim());
+                          handleSelectAirport(customAirport.code);
+                        }}
+                        className="w-full py-2 px-3 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 font-bold text-[11px] flex items-center justify-center gap-1.5 cursor-pointer transition-all"
+                      >
+                        <Plane className="w-3.5 h-3.5" />
+                        <span>Don&apos;t see your exact city? Fly Live to &quot;{searchQuery.trim()}&quot; →</span>
+                      </button>
                     </div>
-
-                    {isSelected && (
-                      <Check className="w-4 h-4 text-amber-400 shrink-0 mr-1" />
-                    )}
-                  </button>
-                );
-              })
-            )}
-
-            {/* Toggle to show more or less places */}
-            {curatedAirports.length > 5 && (
-              <div className="p-2 text-center bg-slate-950/60 border-t border-slate-800/80">
-                <button
-                  type="button"
-                  onClick={() => setShowAllPlaces(!showAllPlaces)}
-                  className="text-xs font-semibold text-amber-400 hover:text-amber-300 transition-colors py-1 px-3 rounded-lg hover:bg-slate-800/60 cursor-pointer inline-flex items-center gap-1.5"
-                >
-                  {showAllPlaces ? (
-                    <span>Show less places (Top 5 only) ↑</span>
-                  ) : (
-                    <span>Show more places ({hiddenPlacesCount} more available) ↓</span>
                   )}
-                </button>
-              </div>
+              </>
             )}
+
+            {/* Results count status bar */}
+            <div className="p-2 text-center bg-slate-950/80 border-t border-slate-800 text-[11px] text-slate-400 font-medium flex items-center justify-between px-3">
+              <span>Showing <strong>{visibleAirports.length}</strong> verified airports</span>
+              <span className="text-sky-400 font-semibold">100% Live Routes</span>
+            </div>
           </div>
         </div>
       )}

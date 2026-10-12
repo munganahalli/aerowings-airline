@@ -67,6 +67,28 @@ export const UserDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'upcoming' | 'alerts' | 'preferences' | 'completed' | 'cancelled'>('upcoming');
   const [pnrSearchInput, setPnrSearchInput] = useState<string>(trackedPNR || '');
   const [selectedBookingForAction, setSelectedBookingForAction] = useState<Booking | null>(null);
+
+  // Listen to cross-component tab switch and focus events
+  React.useEffect(() => {
+    const handleSwitch = (e?: any) => {
+      const storedTab = e?.detail?.tab || sessionStorage.getItem('aerowings_dashboard_tab');
+      if (storedTab) {
+        if (storedTab === 'upcoming' || storedTab === 'completed' || storedTab === 'cancelled' || storedTab === 'alerts' || storedTab === 'preferences') {
+          setActiveTab(storedTab);
+        }
+        sessionStorage.removeItem('aerowings_dashboard_tab');
+      }
+      if (e?.detail?.focusPnr) {
+        setTimeout(() => {
+          const el = document.getElementById('pnr-search-input');
+          if (el) el.focus();
+        }, 120);
+      }
+    };
+    handleSwitch();
+    window.addEventListener('aerowings_switch_dashboard_tab', handleSwitch);
+    return () => window.removeEventListener('aerowings_switch_dashboard_tab', handleSwitch);
+  }, []);
   const [showCancelModal, setShowCancelModal] = useState<boolean>(false);
   const [cancelReason, setCancelReason] = useState<string>('Change in travel plans');
   
@@ -211,7 +233,7 @@ export const UserDashboard: React.FC = () => {
       </div>
 
       {/* PNR Quick Search Toolbar */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div id="pnr-lookup-card" className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
         <div className="flex flex-col sm:flex-row sm:items-center gap-2 text-xs text-slate-300 w-full sm:w-auto">
           <div className="flex items-center gap-2">
             <Ticket className="w-4 h-4 text-sky-400 shrink-0" />
@@ -245,6 +267,7 @@ export const UserDashboard: React.FC = () => {
         <form onSubmit={handlePnrSearch} className="flex items-center gap-2 w-full sm:w-auto">
           <div className="relative w-full sm:w-64">
             <input
+              id="pnr-search-input"
               type="text"
               placeholder="Enter 6-digit PNR (e.g. AW-892F1)"
               value={pnrSearchInput}

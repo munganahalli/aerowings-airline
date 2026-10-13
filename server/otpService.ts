@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { MongoClient, Collection, Db } from 'mongodb';
+import { MongoClient, type Collection, type Db } from 'mongodb';
 import { sendSms, formatE164Phone as twilioFormatE164 } from './twilioSmsService.ts';
 
 // Interface for OTP Document in MongoDB

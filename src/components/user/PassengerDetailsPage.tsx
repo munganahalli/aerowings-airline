@@ -4,6 +4,7 @@ import { useLanguage } from '../../context/LanguageContext';
 import { BookingStepBar } from '../common/BookingStepBar';
 import { formatCurrency } from '../../utils/airlineUtils';
 import { aiVoice } from '../../utils/aiVoice';
+import { airlineDB } from '../../utils/airlineDatabase';
 import {
   User,
   Mail,
@@ -167,36 +168,39 @@ export const PassengerDetailsPage: React.FC = () => {
     aiVoice.speak(`Traveler ${idx + 1} verified.`);
   };
 
-  // Quick-fill valid credentials for all passengers
-  const handleQuickFillSample = () => {
-    const sampleNames = [
-      { title: 'Mr', first: 'Arun', last: 'Kumar', gender: 'Male', dob: '1995-04-12', aadhaar: '5412 7890 2341', pan: 'ABCDE1234F', visa: 'V-IN-987654' },
-      { title: 'Mrs', first: 'Priya', last: 'Sharma', gender: 'Female', dob: '1998-09-24', aadhaar: '6789 1234 5678', pan: 'FGHIJ5678K', visa: 'V-IN-654321' },
-      { title: 'Master', first: 'Rohan', last: 'Kumar', gender: 'Male', dob: '2016-02-18', aadhaar: '9012 3456 7890', pan: 'KLMNO9012P', visa: 'V-IN-321654' },
-      { title: 'Ms', first: 'Ananya', last: 'Iyer', gender: 'Female', dob: '2001-11-05', aadhaar: '3456 7890 1234', pan: 'PQRST3456U', visa: 'V-IN-789123' },
-    ];
+  // AI Auto-Fill from previous bookings in airlineDB
+  const handleAiAutoFillPrevious = () => {
+    const pastBookings = airlineDB.getBookings();
+    if (!pastBookings || pastBookings.length === 0) {
+      addToast('No previous bookings found in your travel history. Using sample profile.', 'info');
+      handleFillPassengerSample(0);
+      return;
+    }
+    const lastBooking = pastBookings[0];
+    if (lastBooking.contactEmail) setContactEmail(lastBooking.contactEmail);
+    if (lastBooking.contactPhone) setContactPhone(lastBooking.contactPhone);
 
-    passengers.forEach((_, idx) => {
-      const sample = sampleNames[idx % sampleNames.length];
-      updatePassenger(idx, {
-        title: sample.title as any,
-        firstName: sample.first,
-        lastName: sample.last,
-        gender: sample.gender as any,
-        dob: sample.dob,
-        aadhaarNumber: sample.aadhaar,
-        panNumber: sample.pan,
-        visaNumber: isInternational ? sample.visa : 'DOMESTIC_EXEMPT',
-        visaStatus: 'Verified',
-        isVerified: true,
-        verifiedAt: new Date().toISOString()
+    if (lastBooking.passengers && lastBooking.passengers.length > 0) {
+      lastBooking.passengers.forEach((p, idx) => {
+        if (idx < passengers.length) {
+          updatePassenger(idx, {
+            title: p.title || 'Mr',
+            firstName: p.firstName || 'Traveler',
+            lastName: p.lastName || 'Passenger',
+            gender: p.gender || 'Male',
+            aadhaarNumber: '5412 7890 2341',
+            panNumber: 'ABCDE1234F',
+            visaNumber: isInternational ? 'V-IN-987654' : 'DOMESTIC_EXEMPT',
+            visaStatus: 'Verified',
+            isVerified: true
+          });
+        }
       });
-    });
-
-    if (!contactEmail.trim()) setContactEmail(userProfile.email || 'traveler@aerowings.com');
-    if (!contactPhone.trim()) setContactPhone(verifiedBookingPhone || userProfile.phone || '+91 8971541794');
-    addToast('✅ All Traveler Names, Aadhaar, PAN & Visa Verified!', 'success');
-    aiVoice.speak('All passenger personal details and visa credentials verified successfully.');
+      addToast(`✨ AI Successfully auto-filled details from your previous booking (PNR: ${lastBooking.pnr})!`, 'success');
+      aiVoice.speak('Passenger details auto-filled by AI from your previous booking history.');
+    } else {
+      handleFillPassengerSample(0);
+    }
   };
 
   const normalizePhone = (raw: string) => {
@@ -352,11 +356,32 @@ export const PassengerDetailsPage: React.FC = () => {
         {/* Quick Fill Button */}
         <button
           type="button"
-          onClick={handleQuickFillSample}
+          onClick={() => passengers.forEach((_, i) => handleFillPassengerSample(i))}
           className="px-3.5 py-2 bg-gradient-to-r from-emerald-600/30 to-blue-600/30 hover:from-emerald-600/40 hover:to-blue-600/40 text-emerald-300 border border-emerald-500/40 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
         >
           <Zap className="w-3.5 h-3.5 text-emerald-400 fill-emerald-400" />
           <span>⚡ Auto-Verify All Travelers (Aadhaar + PAN + Visa)</span>
+        </button>
+      </div>
+
+      {/* AI Auto-Fill Repeat Booking Banner */}
+      <div className="bg-gradient-to-r from-blue-900/40 via-indigo-900/40 to-slate-900 border border-blue-500/30 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-blue-600/20 border border-blue-500/40 flex items-center justify-center text-blue-400 shrink-0">
+            <Sparkles className="w-5 h-5 animate-pulse" />
+          </div>
+          <div>
+            <h4 className="text-xs font-bold text-white">AI Repeat Traveler Memory</h4>
+            <p className="text-[11px] text-slate-300">Have you booked before? Instantly auto-fill your profile & visa documents using AI past history.</p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={handleAiAutoFillPrevious}
+          className="px-4 py-2.5 bg-gradient-to-r from-blue-600 to-sky-500 hover:from-blue-500 hover:to-sky-400 text-white text-xs font-extrabold rounded-xl shadow-md transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5"
+        >
+          <Sparkles className="w-3.5 h-3.5" />
+          <span>✨ AI Auto-Fill from Past Booking</span>
         </button>
       </div>
 

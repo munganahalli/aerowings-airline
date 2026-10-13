@@ -119,6 +119,7 @@ interface AirlineContextType {
   isAdminAuthenticated: boolean;
   loginAdmin: (user: string, pass: string) => boolean;
   logoutAdmin: () => void;
+  unlockAdminPortal: (secretId: string) => boolean;
 
   // User Profile
   userProfile: UserProfile;
@@ -1665,7 +1666,28 @@ export const AirlineProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const logoutAdmin = () => {
     setIsAdminAuthenticated(false);
     setPortalMode('user');
+    try {
+      localStorage.removeItem('aerowings_admin_unlocked');
+    } catch {}
     addToast('Logged out from Admin Console', 'info');
+  };
+
+  const unlockAdminPortal = (secretId: string): boolean => {
+    const cleanId = secretId.trim();
+    if (cleanId === 'AK8971541794M') {
+      setPortalMode('admin');
+      setIsAdminAuthenticated(true);
+      try {
+        localStorage.setItem('aerowings_admin_unlocked', 'AK8971541794M');
+      } catch {}
+      addToast('🔓 AeroWings Prestige Operations Control Center authorized and unlocked.', 'success');
+      aiVoice.speak('Operations Control Center authorized.');
+      return true;
+    } else {
+      addToast('❌ Invalid Authorized ID / Number. Access denied.', 'error');
+      aiVoice.speak('Access denied. Invalid administrator ID.');
+      return false;
+    }
   };
 
   const updateUserProfile = (profile: Partial<UserProfile>) => {
@@ -1880,6 +1902,7 @@ export const AirlineProvider: React.FC<{ children: React.ReactNode }> = ({ child
         isAdminAuthenticated,
         loginAdmin,
         logoutAdmin,
+        unlockAdminPortal,
         userProfile,
         updateUserProfile,
         toasts,

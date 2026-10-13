@@ -29,13 +29,16 @@ export const WebsiteFooter: React.FC = () => {
     applyPromoCode,
     setSearchParams,
     performSearch,
-    searchParams
+    searchParams,
+    unlockAdminPortal
   } = useAirline();
   const [newsletterEmail, setNewsletterEmail] = useState('');
   const [isSubscribed, setIsSubscribed] = useState<boolean>(() => {
     return localStorage.getItem('aerowings_insider_subscribed') === 'true';
   });
   const [copiedCode, setCopiedCode] = useState(false);
+  const [showAdminUnlockModal, setShowAdminUnlockModal] = useState(false);
+  const [adminSecretInput, setAdminSecretInput] = useState('');
   const [activeInfoModal, setActiveInfoModal] = useState<{
     title: string;
     badge: string;
@@ -556,6 +559,15 @@ export const WebsiteFooter: React.FC = () => {
             >
               Security & Compliance
             </button>
+            <span>•</span>
+            <button
+              type="button"
+              onClick={() => setShowAdminUnlockModal(true)}
+              className="text-slate-600 hover:text-amber-400 cursor-pointer transition-colors"
+              title="Authorized Personnel Only"
+            >
+              🔒 Admin Access
+            </button>
           </div>
         </div>
       </div>
@@ -610,6 +622,77 @@ export const WebsiteFooter: React.FC = () => {
                 Done
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Secure Admin Unlock Modal */}
+      {showAdminUnlockModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-amber-500/50 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-5 text-left">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400">
+                  <ShieldCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">Operations Control Center</h3>
+                  <p className="text-[11px] text-slate-400">Restricted Administrator Authorization</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAdminUnlockModal(false);
+                  setAdminSecretInput('');
+                }}
+                className="p-1.5 rounded-xl bg-slate-800 text-slate-300 hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              const ok = unlockAdminPortal(adminSecretInput);
+              if (ok) {
+                setShowAdminUnlockModal(false);
+                setAdminSecretInput('');
+              }
+            }} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Enter Authorized Admin ID / Number
+                </label>
+                <input
+                  type="password"
+                  value={adminSecretInput}
+                  onChange={(e) => setAdminSecretInput(e.target.value)}
+                  placeholder="Enter secret authorization number..."
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-xs font-mono text-amber-300 focus:outline-none focus:border-amber-500"
+                  autoFocus
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAdminUnlockModal(false);
+                    setAdminSecretInput('');
+                  }}
+                  className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 hover:text-white font-bold text-xs cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs cursor-pointer shadow-lg"
+                >
+                  Authorize & Unlock →
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

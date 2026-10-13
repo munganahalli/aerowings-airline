@@ -852,7 +852,7 @@ export const HomePage: React.FC = () => {
                               <span className="w-5 text-center text-sm font-bold text-white">{adults}</span>
                               <button
                                 type="button"
-                                onClick={() => setAdults(Math.min(9, adults + 1))}
+                                onClick={() => setAdults(Math.min(60, adults + 1))}
                                 className="w-7 h-7 rounded-lg bg-slate-800 text-white font-bold flex items-center justify-center hover:bg-slate-700"
                               >
                                 +
@@ -953,7 +953,7 @@ export const HomePage: React.FC = () => {
                       <span className="text-[10px] text-slate-500">Tap to load route</span>
                     </div>
 
-                    <div className="flex items-center gap-2 overflow-x-auto text-xs pb-1.5 scrollbar-thin">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-52 overflow-y-auto pr-1 scrollbar-thin">
                       {[
                         { label: '🏡 Intra-State: Mumbai ↔ Pune (40m)', origin: 'BOM', dest: 'PNQ', tag: 'Intra-State', fare: '₹2,450' },
                         { label: '🏡 Intra-State: Chennai ↔ Madurai (50m)', origin: 'MAA', dest: 'IXM', tag: 'Intra-State', fare: '₹2,680' },
@@ -976,15 +976,15 @@ export const HomePage: React.FC = () => {
                               setDestination(preset.dest);
                               addToast(`Loaded corridor: ${preset.origin} → ${preset.dest} (${preset.tag})`, 'info');
                             }}
-                            className={`px-3 py-1.5 rounded-xl border text-[11px] sm:text-xs font-semibold whitespace-nowrap cursor-pointer transition-all shrink-0 flex items-center gap-1.5 ${
+                            className={`w-full text-left px-3.5 py-2 rounded-xl border text-xs font-semibold cursor-pointer transition-all flex items-center justify-between gap-2 ${
                               isSelected
                                 ? 'bg-gradient-to-r from-blue-600/30 to-sky-600/30 border-sky-400 text-sky-200 shadow-md shadow-blue-500/20'
                                 : 'bg-slate-950 hover:bg-slate-800 border-slate-800 text-slate-300 hover:text-white'
                             }`}
                           >
-                            <span>{preset.label}</span>
-                            <span className={`text-[9px] px-1.5 py-0.5 rounded font-black ${
-                              isSelected ? 'bg-sky-500/30 text-sky-200' : 'bg-slate-800 text-slate-400'
+                            <span className="truncate">{preset.label}</span>
+                            <span className={`text-[10px] px-2 py-0.5 rounded font-black shrink-0 ${
+                              isSelected ? 'bg-sky-500/30 text-sky-200' : 'bg-slate-800 text-slate-300'
                             }`}>
                               {preset.fare}
                             </span>

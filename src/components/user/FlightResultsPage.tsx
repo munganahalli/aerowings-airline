@@ -10,6 +10,7 @@ import { generateFlightsForRoute } from '../../utils/flightRouteGenerator';
 import { RealtimeAirportWeatherWidget } from '../common/RealtimeAirportWeatherWidget';
 import { getAirportWeatherImmediate } from '../../utils/realtimeWeather';
 import { PrestigeOtpVerificationModal } from '../common/PrestigeOtpVerificationModal';
+import { AirlineBrandBadge } from '../common/AirlineLogo';
 import {
   Plane,
   ArrowRight,
@@ -108,6 +109,7 @@ export const FlightResultsPage: React.FC = () => {
       list = list.filter(f => selectedAirlines.some(a => 
         f.airline.toLowerCase().includes(a.toLowerCase()) || 
         f.airlineCode.toLowerCase() === a.toLowerCase() ||
+        a.toLowerCase().includes(f.airline.toLowerCase()) ||
         a.toLowerCase().includes(f.airlineCode.toLowerCase())
       ));
     }
@@ -594,11 +596,30 @@ export const FlightResultsPage: React.FC = () => {
               <div className="space-y-1.5">
                 {[
                   { name: 'AeroWings', code: 'AW', badge: 'Flagship Airline', color: 'text-sky-400' },
-                  { name: 'IndiGo', code: '6E', badge: 'Domestic Carrier', color: 'text-blue-400' },
-                  { name: 'Air India', code: 'AI', badge: 'National Carrier', color: 'text-red-400' },
-                  { name: 'Akasa Air', code: 'QP', badge: 'Budget Eco', color: 'text-amber-400' },
-                  { name: 'SpiceJet', code: 'SG', badge: 'Express Carrier', color: 'text-orange-400' },
-                  { name: 'Emirates / SQ / BA', code: 'INTL', badge: 'Global Partners', color: 'text-purple-400' },
+                  { name: 'Air Sahara', code: 'S2', badge: 'Carrier', color: 'text-red-400' },
+                  { name: 'Air Costa', code: 'LB', badge: 'Carrier', color: 'text-blue-400' },
+                  { name: 'Air Deccan', code: 'DN', badge: 'Carrier', color: 'text-amber-400' },
+                  { name: 'Air Pegasus', code: '9P', badge: 'Carrier', color: 'text-emerald-400' },
+                  { name: 'Air Carnival', code: '2S', badge: 'Carrier', color: 'text-purple-400' },
+                  { name: 'Air Odisha', code: '6O', badge: 'Carrier', color: 'text-indigo-400' },
+                  { name: 'Air Mantra', code: 'M9', badge: 'Carrier', color: 'text-pink-400' },
+                  { name: 'AIX Connect', code: 'I5', badge: 'Carrier', color: 'text-sky-300' },
+                  { name: 'Archana Airways', code: 'KW', badge: 'Carrier', color: 'text-yellow-400' },
+                  { name: 'Damania Airways', code: 'D2', badge: 'Carrier', color: 'text-orange-400' },
+                  { name: 'East-West Airlines', code: '4S', badge: 'Carrier', color: 'text-teal-400' },
+                  { name: 'Go First (GoAir)', code: 'G8', badge: 'Carrier', color: 'text-cyan-400' },
+                  { name: 'Indian Airlines', code: 'IC', badge: 'Carrier', color: 'text-red-300' },
+                  { name: 'Jet Airways', code: '9W', badge: 'Carrier', color: 'text-blue-300' },
+                  { name: 'Kingfisher Airlines', code: 'IT', badge: 'Carrier', color: 'text-amber-300' },
+                  { name: 'ModiLuft', code: 'OD', badge: 'Carrier', color: 'text-purple-300' },
+                  { name: 'NEPC Airlines', code: 'D5', badge: 'Carrier', color: 'text-emerald-300' },
+                  { name: 'Paramount Airways', code: 'I7', badge: 'Carrier', color: 'text-indigo-300' },
+                  { name: 'TruJet', code: '2T', badge: 'Carrier', color: 'text-pink-300' },
+                  { name: 'Vayudoot', code: 'V5', badge: 'Carrier', color: 'text-sky-400' },
+                  { name: 'Vistara', code: 'UK', badge: 'Carrier', color: 'text-purple-400' },
+                  { name: 'Zooom Air', code: 'ZO', badge: 'Carrier', color: 'text-amber-400' },
+                  { name: 'IndiGo', code: '6E', badge: 'Carrier', color: 'text-blue-400' },
+                  { name: 'Air India', code: 'AI', badge: 'Carrier', color: 'text-red-400' },
                 ].map((airlineItem) => {
                   const isChecked = selectedAirlines.includes(airlineItem.name) || selectedAirlines.includes(airlineItem.code);
                   return (

@@ -73,7 +73,7 @@ export const PassengerDetailsPaymentPage: React.FC = () => {
   const [contactEmail, setContactEmail] = useState(userProfile.email || 'traveler@aerowings.com');
 
   // Payment states (clean defaults)
-  const [paymentMethod, setPaymentMethod] = useState<'card' | 'upi' | 'netbanking' | 'wallet'>('card');
+  const [paymentMethod, setPaymentMethod] = useState<'card' | 'upi' | 'qr' | 'netbanking' | 'wallet'>('card');
   const [cardNumber, setCardNumber] = useState('');
   const [cardHolder, setCardHolder] = useState('');
   const [cardExpiry, setCardExpiry] = useState('');
@@ -205,14 +205,47 @@ export const PassengerDetailsPaymentPage: React.FC = () => {
       return;
     }
 
-    if (paymentMethod === 'card' && (!cardNumber || !cardHolder || !cardExpiry || !cardCvv)) {
-      addToast('Please enter all credit/debit card fields (or click a Demo Test Card)', 'error');
-      return;
-    }
-
-    if (paymentMethod === 'upi' && !upiId) {
-      addToast('Please enter a valid UPI ID or select a quick UPI app', 'error');
-      return;
+    if (paymentMethod === 'card') {
+      const cleanCard = cardNumber.replace(/\D/g, '');
+      if (cleanCard.length < 13 || cleanCard.length > 19) {
+        addToast('Please enter a valid 13 to 16 digit credit/debit card number', 'error');
+        return;
+      }
+      if (!cardHolder || cardHolder.trim().length < 3) {
+        addToast('Please enter the cardholder legal name', 'error');
+        return;
+      }
+      if (!/^(0[1-9]|1[0-2])\/?([0-9]{2})$/.test(cardExpiry.trim())) {
+        addToast('Please enter a valid expiry date in MM/YY format (e.g. 08/28)', 'error');
+        return;
+      }
+      if (!/^\d{3,4}$/.test(cardCvv.trim())) {
+        addToast('Please enter a valid 3 or 4 digit CVV security code', 'error');
+        return;
+      }
+    } else if (paymentMethod === 'upi') {
+      const cleanUpi = upiId.trim();
+      if (!cleanUpi || !/^[a-zA-Z0-9.\-_]{2,64}@[a-zA-Z]{2,64}$/.test(cleanUpi)) {
+        addToast('Please enter a valid UPI ID (e.g. name@okhdfcbank or mobile@paytm)', 'error');
+        return;
+      }
+    } else if (paymentMethod === 'qr') {
+      const cleanUpi = upiId.trim();
+      if (!cleanUpi && !cardHolder) {
+        addToast('Please scan the QR code or enter valid UPI ID / Reference to authorize payment', 'error');
+        return;
+      }
+    } else if (paymentMethod === 'netbanking') {
+      if (!selectedBank) {
+        addToast('Please select a valid bank for Netbanking clearance', 'error');
+        return;
+      }
+    } else if (paymentMethod === 'wallet') {
+      const walletBalance = userProfile.miles * 0.5;
+      if (walletBalance < fare.finalTotal) {
+        addToast(`Insufficient SkyWings Wallet balance (${formatCurrency(walletBalance, currency)}). Please select another payment mode.`, 'error');
+        return;
+      }
     }
 
     // Direct Instant Payment Authorization (Zero OTP Blocker)
@@ -550,7 +583,7 @@ export const PassengerDetailsPaymentPage: React.FC = () => {
             </div>
 
             {/* Payment Method Selector Tabs */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
               <button
                 type="button"
                 onClick={() => setPaymentMethod('card')}
@@ -574,9 +607,23 @@ export const PassengerDetailsPaymentPage: React.FC = () => {
                     : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
                 }`}
               >
-                <QrCode className="w-5 h-5 mx-auto mb-1.5 text-emerald-400" />
-                <span className="text-xs font-bold block">UPI / QR Pay</span>
-                <span className="text-[10px] text-slate-500">GPay, PhonePe</span>
+                <Smartphone className="w-5 h-5 mx-auto mb-1.5 text-emerald-400" />
+                <span className="text-xs font-bold block">UPI ID</span>
+                <span className="text-[10px] text-slate-500">VPA Handle</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPaymentMethod('qr')}
+                className={`p-3 rounded-2xl border text-center transition-all cursor-pointer ${
+                  paymentMethod === 'qr'
+                    ? 'bg-sky-600/20 border-sky-500 text-white shadow-md ring-2 ring-sky-500/40'
+                    : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                }`}
+              >
+                <QrCode className="w-5 h-5 mx-auto mb-1.5 text-sky-400" />
+                <span className="text-xs font-bold block">QR Pay</span>
+                <span className="text-[10px] text-slate-500">Scan & Pay</span>
               </button>
 
               <button
@@ -707,6 +754,31 @@ export const PassengerDetailsPaymentPage: React.FC = () => {
                     onChange={(e) => setUpiId(e.target.value)}
                     placeholder="user@oksbi"
                     className="w-full max-w-sm mx-auto bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-xs font-mono text-center text-emerald-400 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+            )}
+
+            {paymentMethod === 'qr' && (
+              <div className="space-y-4 pt-2">
+                <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3 text-center">
+                  <div className="w-32 h-32 bg-white p-2 rounded-2xl mx-auto flex items-center justify-center border-4 border-sky-500 shadow-xl">
+                    <div className="w-full h-full bg-slate-900 flex flex-col items-center justify-center text-white text-[10px] font-mono p-1 text-center">
+                      <QrCode className="w-12 h-12 text-sky-400 mb-1 animate-pulse" />
+                      <span>SCAN & PAY</span>
+                      <span className="text-[8px] text-emerald-400">₹{fare.finalTotal}</span>
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-xs font-bold text-white block">Scan AeroWings Secure QR Code</span>
+                    <span className="text-[11px] text-slate-400">Scan with any UPI App (GPay, PhonePe, Paytm, BHIM)</span>
+                  </div>
+                  <input
+                    type="text"
+                    value={upiId}
+                    onChange={(e) => setUpiId(e.target.value)}
+                    placeholder="Enter UPI Transaction ID or VPA after scanning"
+                    className="w-full max-w-sm mx-auto bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-xs font-mono text-center text-sky-400 focus:outline-none focus:border-sky-500"
                   />
                 </div>
               </div>

@@ -11,7 +11,7 @@
  * memory fallback if MongoDB URI is being configured.
  */
 
-import { MongoClient, Db, Collection, ObjectId } from 'mongodb';
+import { MongoClient, type Db, type Collection, ObjectId } from 'mongodb';
 
 // ==========================================
 // 1. DATA MODELS & SCHEMAS

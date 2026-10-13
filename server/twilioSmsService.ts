@@ -9,7 +9,9 @@
  * the application or disrupt the user's booking flow.
  */
 
-import twilio, { Twilio } from 'twilio';
+import twilio from 'twilio';
+
+type TwilioClient = any;
 
 export interface SmsDeliveryResult {
   success: boolean;
@@ -39,7 +41,7 @@ export interface FlightBookingSmsPayload {
   customMessage?: string;
 }
 
-let twilioClient: Twilio | null = null;
+let twilioClient: TwilioClient | null = null;
 let cachedProvisionedSender: string | null = null;
 
 const DEFAULT_TWILIO_SID = 'AC96b612b55974a9b5bc1152cb9fd85251';
@@ -77,7 +79,7 @@ export function formatE164Phone(rawPhone: string): string {
  * Lazy initialization of the Twilio client using environment variables or user credentials.
  * Falls back safely if credentials are not provided.
  */
-export function getTwilioClient(): Twilio | null {
+export function getTwilioClient(): TwilioClient | null {
   const accountSid = process.env.TWILIO_ACCOUNT_SID || DEFAULT_TWILIO_SID;
   const authToken = process.env.TWILIO_AUTH_TOKEN || DEFAULT_TWILIO_TOKEN;
 
@@ -100,7 +102,7 @@ export function getTwilioClient(): Twilio | null {
 /**
  * Resolve active Twilio sender number if user-provided From number is rejected by Twilio REST API
  */
-async function resolveTwilioSenderNumber(client: Twilio): Promise<string> {
+async function resolveTwilioSenderNumber(client: TwilioClient): Promise<string> {
   if (cachedProvisionedSender) return cachedProvisionedSender;
   try {
     const incomingNumbers = await client.incomingPhoneNumbers.list({ limit: 1 });

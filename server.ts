@@ -1,7 +1,7 @@
 import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
-import { GoogleGenAI, FunctionDeclaration, Type } from '@google/genai';
+import { GoogleGenAI, type FunctionDeclaration, Type } from '@google/genai';
 import dotenv from 'dotenv';
 import {
   generateSecure6DigitOtp,
@@ -23,9 +23,9 @@ import {
   issueTicket,
   getTicketByIdentifier,
   getAllTickets,
-  FlightBookingModel,
-  UserModel,
-  TicketModel
+  type FlightBookingModel,
+  type UserModel,
+  type TicketModel
 } from './server/mongoService.ts';
 import {
   sendSms,

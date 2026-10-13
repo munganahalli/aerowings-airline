@@ -210,31 +210,7 @@ export const Navbar: React.FC = () => {
               )}
             </button>
 
-            {portalMode === 'user' ? (
-              <>
-                {/* Admin Mode Switcher */}
-                <button
-                  id="switch-to-admin-btn"
-                  onClick={() => {
-                    setPortalMode('admin');
-                    setMobileMenuOpen(false);
-                  }}
-                  className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-amber-500/30 text-amber-300 text-xs font-semibold transition-all cursor-pointer shadow-sm"
-                >
-                  <Shield className="w-3.5 h-3.5 text-amber-400" />
-                  <span className="hidden lg:inline">{t('app.adminOps')}</span>
-                </button>
-              </>
-            ) : (
-              <button
-                id="switch-to-user-btn"
-                onClick={() => setPortalMode('user')}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-amber-500/30 text-amber-300 text-xs font-semibold transition-all cursor-pointer"
-              >
-                <Plane className="w-3.5 h-3.5" />
-                <span>{t('app.passengerPortal')}</span>
-              </button>
-            )}
+
 
             {/* Mobile & Tablet Drawer Toggle Button */}
             <button

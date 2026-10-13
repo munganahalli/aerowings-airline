@@ -139,7 +139,6 @@ export const AIRPORTS: Airport[] = [
   { code: 'MRU', name: 'Sir Seewoosagur Ramgoolam International', city: 'Mauritius', state: 'Plaines Wilhems', country: 'Mauritius', terminal: 'Main', isInternational: true },
   { code: 'SEZ', name: 'Seychelles International Airport', city: 'Mahé (Seychelles)', state: 'Pointe La Rue', country: 'Seychelles', terminal: 'Intl', isInternational: true },
   { code: 'SHJ', name: 'Sharjah International Airport', city: 'Sharjah', state: 'Sharjah', country: 'UAE', terminal: 'T1', isInternational: true },
-  { code: 'BAH', name: 'Bahrain International Airport', city: 'Manama', state: 'Muharraq', country: 'Bahrain', terminal: 'Main', isInternational: true },
   { code: 'DMM', name: 'King Fahd International Airport', city: 'Dammam', state: 'Eastern Province', country: 'Saudi Arabia', terminal: 'Main', isInternational: true },
   { code: 'ATH', name: 'Athens International Airport', city: 'Athens', state: 'Attica', country: 'Greece', terminal: 'A', isInternational: true },
   { code: 'CPH', name: 'Copenhagen Airport', city: 'Copenhagen', state: 'Capital Region', country: 'Denmark', terminal: 'T3', isInternational: true },

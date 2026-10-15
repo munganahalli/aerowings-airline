@@ -416,17 +416,29 @@ export function generateCompleteTicketHtml(booking: Booking, targetPax: Passenge
 
     const originUrl = typeof window !== 'undefined' ? window.location.origin : 'https://aerowings.airline.com';
     const assignedSeat = pax.seatNumber || `12${String.fromCharCode(65 + idx)}`;
+    const allPaxSummary = booking.passengers.map((p, i) => `${i+1}. ${p.title || 'Mr'} ${p.firstName} ${p.lastName} (Seat ${p.seatNumber || `${12+i}A`})`).join(' | ');
+    const paxManifestEncoded = encodeURIComponent(JSON.stringify(booking.passengers.map((p, i) => ({
+      index: i + 1,
+      title: p.title || 'Mr',
+      firstName: p.firstName,
+      lastName: p.lastName,
+      seatNumber: p.seatNumber || `${12 + i}${['A', 'B', 'C', 'D', 'E', 'F'][i % 6]}`,
+      aadhaarNumber: p.aadhaarNumber || 'Verified',
+      panNumber: p.panNumber || '',
+      visaNumber: p.visaNumber || ''
+    }))));
+
     const qrTextPayload = [
-      `AEROWINGS OFFICIAL E-TICKET`,
+      `AEROWINGS OFFICIAL MASTER E-TICKET (${booking.passengers.length} TRAVELERS)`,
       `PNR: ${booking.pnr} (${booking.status.toUpperCase()})`,
-      `PASSENGER: ${pax.title} ${pax.firstName} ${pax.lastName}`,
+      `ALL PASSENGERS: ${allPaxSummary}`,
       `FLIGHT: ${flight.airlineCode || 'AW'}-${flight.flightNumber} (${flight.origin.code} -> ${flight.destination.code})`,
-      `DATE: ${booking.departureDate} | DEP: ${flight.departureTime}`,
-      `SEAT: ${assignedSeat} | GATE: ${flight.gate || '22A'} | CLASS: ${booking.cabinClass.toUpperCase()}`,
-      `PAID: INR ${booking.priceBreakdown.finalTotal.toLocaleString()}`
+      `DATE: ${booking.departureDate} | DEP: ${flight.departureTime} | GATE: ${flight.gate || '22A'}`,
+      `TOTAL PAID: INR ${booking.priceBreakdown.finalTotal.toLocaleString()}`
     ].join('\n');
-    const verifyUrl = `${originUrl}/?verifyPnr=${encodeURIComponent(booking.pnr)}&pax=${encodeURIComponent(`${pax.title} ${pax.firstName} ${pax.lastName}`)}&flight=${encodeURIComponent(`${flight.airlineCode || 'AW'}-${flight.flightNumber}`)}&from=${encodeURIComponent(flight.origin.code)}&fromCity=${encodeURIComponent(flight.origin.city)}&to=${encodeURIComponent(flight.destination.code)}&toCity=${encodeURIComponent(flight.destination.city)}&date=${encodeURIComponent(booking.departureDate)}&time=${encodeURIComponent(flight.departureTime)}&seat=${encodeURIComponent(assignedSeat)}&gate=${encodeURIComponent(flight.gate || '22A')}&class=${encodeURIComponent(booking.cabinClass.toUpperCase())}&status=${encodeURIComponent(booking.status)}&paid=${encodeURIComponent(String(booking.priceBreakdown.finalTotal))}`;
-    const qrImgUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&ecc=M&margin=8&data=${encodeURIComponent(qrTextPayload)}`;
+
+    const verifyUrl = `${originUrl}/?verifyPnr=${encodeURIComponent(booking.pnr)}&pax=${encodeURIComponent(`${pax.title} ${pax.firstName} ${pax.lastName}`)}&flight=${encodeURIComponent(`${flight.airlineCode || 'AW'}-${flight.flightNumber}`)}&from=${encodeURIComponent(flight.origin.code)}&fromCity=${encodeURIComponent(flight.origin.city)}&to=${encodeURIComponent(flight.destination.code)}&toCity=${encodeURIComponent(flight.destination.city)}&date=${encodeURIComponent(booking.departureDate)}&time=${encodeURIComponent(flight.departureTime)}&seat=${encodeURIComponent(assignedSeat)}&gate=${encodeURIComponent(flight.gate || '22A')}&class=${encodeURIComponent(booking.cabinClass.toUpperCase())}&status=${encodeURIComponent(booking.status)}&paid=${encodeURIComponent(String(booking.priceBreakdown.finalTotal))}&paxManifest=${paxManifestEncoded}`;
+    const qrImgUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&ecc=M&margin=8&data=${encodeURIComponent(verifyUrl)}`;
 
     return `
     <div style="background: white; border: 2px solid #0284c7; border-radius: 12px; margin-bottom: 24px; padding: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); page-break-inside: avoid;">

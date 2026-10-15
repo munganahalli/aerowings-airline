@@ -943,56 +943,7 @@ export const HomePage: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Redesigned Popular Corridor Presets */}
-                  <div className="pt-2 space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-slate-400 font-bold text-[11px] sm:text-xs flex items-center gap-1.5">
-                        <Sparkles className="w-3.5 h-3.5 text-sky-400" />
-                        <span>Popular Corridor Presets (1-Click Route Selection):</span>
-                      </span>
-                      <span className="text-[10px] text-slate-500">Tap to load route</span>
-                    </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-52 overflow-y-auto pr-1 scrollbar-thin">
-                      {[
-                        { label: '🏡 Intra-State: Mumbai ↔ Pune (40m)', origin: 'BOM', dest: 'PNQ', tag: 'Intra-State', fare: '₹2,450' },
-                        { label: '🏡 Intra-State: Chennai ↔ Madurai (50m)', origin: 'MAA', dest: 'IXM', tag: 'Intra-State', fare: '₹2,680' },
-                        { label: '🏡 Intra-State: Bengaluru ↔ Mangaluru (45m)', origin: 'BLR', dest: 'IXE', tag: 'Intra-State', fare: '₹2,350' },
-                        { label: '🇮🇳 Trunk: Delhi ↔ Mumbai (Non-Stop)', origin: 'DEL', dest: 'BOM', tag: 'Trunk Metro', fare: '₹4,200' },
-                        { label: '🇮🇳 Tech Hub: Delhi ↔ Bengaluru', origin: 'DEL', dest: 'BLR', tag: 'Silicon', fare: '₹4,850' },
-                        { label: '🏖️ Holiday: Mumbai ↔ Goa (Dabolim)', origin: 'BOM', dest: 'GOI', tag: 'Holiday', fare: '₹3,150' },
-                        { label: '🏖️ Holiday: Bengaluru ↔ Kochi', origin: 'BLR', dest: 'COK', tag: 'Holiday', fare: '₹2,800' },
-                        { label: '✈️ Gulf Express: Delhi ↔ Dubai (Non-Stop)', origin: 'DEL', dest: 'DXB', tag: 'Intl Flagship', fare: '₹14,500' },
-                        { label: '✈️ Westbound: Mumbai ↔ London Heathrow', origin: 'BOM', dest: 'LHR', tag: 'Long-Haul', fare: '₹38,900' },
-                        { label: '✈️ Far East: Bengaluru ↔ Singapore', origin: 'BLR', dest: 'SIN', tag: 'Airbus A350', fare: '₹16,200' },
-                      ].map((preset, idx) => {
-                        const isSelected = origin === preset.origin && destination === preset.dest;
-                        return (
-                          <button
-                            key={idx}
-                            type="button"
-                            onClick={() => {
-                              setOrigin(preset.origin);
-                              setDestination(preset.dest);
-                              addToast(`Loaded corridor: ${preset.origin} → ${preset.dest} (${preset.tag})`, 'info');
-                            }}
-                            className={`w-full text-left px-3.5 py-2 rounded-xl border text-xs font-semibold cursor-pointer transition-all flex items-center justify-between gap-2 ${
-                              isSelected
-                                ? 'bg-gradient-to-r from-blue-600/30 to-sky-600/30 border-sky-400 text-sky-200 shadow-md shadow-blue-500/20'
-                                : 'bg-slate-950 hover:bg-slate-800 border-slate-800 text-slate-300 hover:text-white'
-                            }`}
-                          >
-                            <span className="truncate">{preset.label}</span>
-                            <span className={`text-[10px] px-2 py-0.5 rounded font-black shrink-0 ${
-                              isSelected ? 'bg-sky-500/30 text-sky-200' : 'bg-slate-800 text-slate-300'
-                            }`}>
-                              {preset.fare}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
 
                   {/* Search Action Bar */}
                   <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2">

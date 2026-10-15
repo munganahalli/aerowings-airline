@@ -170,13 +170,7 @@ export const Navbar: React.FC = () => {
                 {t('nav.timetable')}
               </button>
             </nav>
-          ) : (
-            <div className="hidden md:flex items-center gap-2 text-sm text-slate-300">
-              <span className="flex items-center gap-1.5 text-amber-400 font-semibold px-2.5 py-1 rounded-md bg-amber-950/40 border border-amber-500/30">
-                <Shield className="w-4 h-4 text-amber-400" /> AeroWings Prestige Operations Control Center
-              </span>
-            </div>
-          )}
+          ) : null}
 
           {/* Right Action Buttons */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
@@ -319,20 +313,6 @@ export const Navbar: React.FC = () => {
           <div className="pt-2 border-t border-slate-800 flex items-center justify-between px-1">
             <span className="text-xs font-semibold text-slate-400">{t('app.language')}:</span>
             <LanguageSwitcher />
-          </div>
-
-          {/* Admin Switch */}
-          <div className="pt-2 border-t border-slate-800">
-            <button
-              onClick={() => {
-                setPortalMode('admin');
-                setMobileMenuOpen(false);
-              }}
-              className="w-full p-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-amber-500/40 text-amber-300 font-bold flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <Shield className="w-4 h-4 text-amber-400" />
-              <span>{t('app.adminOps')}</span>
-            </button>
           </div>
         </div>
       )}

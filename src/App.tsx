@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { Component, useEffect, useState, ReactNode } from 'react';
+import React, { Component, useEffect, useState, useMemo, ReactNode } from 'react';
 import { LanguageProvider } from './context/LanguageContext';
 import { AirlineProvider, useAirline } from './context/AirlineContext';
 import { Navbar } from './components/common/Navbar';
@@ -114,6 +114,39 @@ const MainLayout: React.FC = () => {
     ? getBookingByPNR(scannedTicketParams.verifyPnr)
     : undefined;
 
+  const scannedPassengers: Array<{
+    title?: string;
+    firstName: string;
+    lastName?: string;
+    seatNumber?: string;
+    aadhaarNumber?: string;
+    panNumber?: string;
+    visaNumber?: string;
+  }> = useMemo(() => {
+    if (matchedLocalBooking?.passengers && matchedLocalBooking.passengers.length > 0) {
+      return matchedLocalBooking.passengers;
+    }
+    if (scannedTicketParams?.paxManifest) {
+      try {
+        const decoded = JSON.parse(decodeURIComponent(scannedTicketParams.paxManifest));
+        if (Array.isArray(decoded) && decoded.length > 0) return decoded;
+      } catch {
+        // fallback
+      }
+    }
+    if (scannedTicketParams?.pax) {
+      return [
+        {
+          title: 'Mr',
+          firstName: scannedTicketParams.pax,
+          lastName: '',
+          seatNumber: scannedTicketParams.seat || '12A'
+        }
+      ];
+    }
+    return [];
+  }, [matchedLocalBooking, scannedTicketParams]);
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-amber-500 selection:text-slate-950 pb-20 lg:pb-0">
       {/* Universal Top Navigation */}
@@ -186,54 +219,77 @@ const MainLayout: React.FC = () => {
                 </div>
               </div>
 
-              {/* Passenger & Seat Grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
+              {/* Master PNR & Travel Meta Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
                 <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-3">
-                  <span className="text-[10px] text-slate-400 uppercase block">Passenger Name</span>
-                  <strong className="text-white text-sm font-black block mt-0.5">
-                    {scannedTicketParams.pax ||
-                      (matchedLocalBooking?.passengers[0]
-                        ? `${matchedLocalBooking.passengers[0].title} ${matchedLocalBooking.passengers[0].firstName} ${matchedLocalBooking.passengers[0].lastName}`
-                        : 'Verified Traveler')}
-                  </strong>
-                </div>
-                <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-3">
-                  <span className="text-[10px] text-slate-400 uppercase block">PNR Reference</span>
+                  <span className="text-[10px] text-slate-400 uppercase block">Group PNR</span>
                   <strong className="text-amber-400 text-sm font-mono font-black block mt-0.5">
                     {scannedTicketParams.verifyPnr}
                   </strong>
                 </div>
                 <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-3">
-                  <span className="text-[10px] text-slate-400 uppercase block">Assigned Seat</span>
-                  <strong className="text-sky-400 text-sm font-black block mt-0.5">
-                    {scannedTicketParams.seat || matchedLocalBooking?.passengers[0]?.seatNumber || '12A'}
+                  <span className="text-[10px] text-slate-400 uppercase block">Travel Date</span>
+                  <strong className="text-white text-xs font-bold block mt-0.5">
+                    {scannedTicketParams.date || matchedLocalBooking?.departureDate || 'Today'}
                   </strong>
                 </div>
                 <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-3">
-                  <span className="text-[10px] text-slate-400 uppercase block">Departure Date & Time</span>
-                  <strong className="text-white font-bold block mt-0.5">
-                    {scannedTicketParams.date || matchedLocalBooking?.departureDate || 'Today'} •{' '}
-                    {scannedTicketParams.time || matchedLocalBooking?.flight.departureTime || '10:00'}
-                  </strong>
-                </div>
-                <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-3">
-                  <span className="text-[10px] text-slate-400 uppercase block">Boarding Gate & Class</span>
-                  <strong className="text-emerald-300 font-bold block mt-0.5">
+                  <span className="text-[10px] text-slate-400 uppercase block">Gate & Class</span>
+                  <strong className="text-emerald-300 text-xs font-bold block mt-0.5">
                     Gate {scannedTicketParams.gate || '22A'} • {scannedTicketParams.class || 'ECONOMY'}
                   </strong>
                 </div>
                 <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-3">
                   <span className="text-[10px] text-slate-400 uppercase block">Total Fare Paid</span>
-                  <strong className="text-emerald-400 font-mono font-black block mt-0.5">
+                  <strong className="text-emerald-400 text-xs font-mono font-black block mt-0.5">
                     ₹{Number(scannedTicketParams.paid || matchedLocalBooking?.priceBreakdown.finalTotal || 4850).toLocaleString()}
                   </strong>
+                </div>
+              </div>
+
+              {/* All Booked Passengers Manifest */}
+              <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                    <span>👥 All Booked Travelers Manifest ({scannedPassengers.length} Member{scannedPassengers.length > 1 ? 's' : ''})</span>
+                  </span>
+                  <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                    All Passes Active
+                  </span>
+                </div>
+
+                <div className="space-y-2 max-h-52 overflow-y-auto pr-1 scrollbar-thin">
+                  {scannedPassengers.map((p, idx) => (
+                    <div key={idx} className="p-3 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between text-xs hover:border-slate-700 transition-colors">
+                      <div className="flex items-center gap-2.5">
+                        <span className="w-6 h-6 rounded-full bg-blue-600 text-white font-black text-xs flex items-center justify-center shrink-0">
+                          {idx + 1}
+                        </span>
+                        <div>
+                          <strong className="text-white text-xs block">
+                            {p.title || 'Mr'} {p.firstName} {p.lastName || ''}
+                          </strong>
+                          <span className="text-[10px] text-slate-400">
+                            {p.aadhaarNumber ? `Aadhaar: ${p.aadhaarNumber}` : 'Govt Photo ID Verified'} {p.panNumber ? `• PAN: ${p.panNumber}` : ''} {p.visaNumber ? '• Visa Active' : ''}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="text-right shrink-0">
+                        <span className="text-[9px] text-slate-400 uppercase block font-semibold">Seat Number</span>
+                        <strong className="text-sky-400 font-black text-sm">
+                          {p.seatNumber || `${12 + idx}A`}
+                        </strong>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
 
               <div className="p-3.5 rounded-xl bg-emerald-950/40 border border-emerald-500/40 flex items-center justify-between gap-2 text-xs text-emerald-200">
                 <div className="flex items-center gap-2">
                   <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span>Cleared for Airport Terminal Entry & Priority Gate Boarding</span>
+                  <span>Cleared for Airport Terminal Security & All Gate Boarding Passes</span>
                 </div>
                 <span className="font-mono text-[10px] text-emerald-400 font-bold">BCBP-OK</span>
               </div>

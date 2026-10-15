@@ -397,6 +397,9 @@ export async function fetchLiveAirportWeather(airportCode: string, forceRefresh 
     };
 
     weatherCache.set(code, { data: weatherData, timestamp: Date.now() });
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('aerowings_weather_updated', { detail: { airportCode: code, weather: weatherData } }));
+    }
     return weatherData;
   } catch (err) {
     // Try backend /api/weather/current fallback
@@ -430,6 +433,9 @@ export async function fetchLiveAirportWeather(airportCode: string, forceRefresh 
             lastUpdated: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
           };
           weatherCache.set(code, { data: weatherData, timestamp: Date.now() });
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('aerowings_weather_updated', { detail: { airportCode: code, weather: weatherData } }));
+          }
           return weatherData;
         }
       }

@@ -219,12 +219,14 @@ export const RealtimeAirportWeatherWidget: React.FC<RealtimeAirportWeatherWidget
                     setLoading(false);
                   },
                   async () => {
-                    await loadWeatherData(true, 'BLR');
+                    const fallbackCode = originWeather?.airportCode || originCode || 'DEL';
+                    await loadWeatherData(true, fallbackCode);
                   },
-                  { timeout: 4000 }
+                  { timeout: 3500 }
                 );
               } else {
-                loadWeatherData(true, 'BLR');
+                const fallbackCode = originWeather?.airportCode || originCode || 'DEL';
+                loadWeatherData(true, fallbackCode);
               }
             }}
             className="px-2.5 py-1 rounded-lg bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-500/40 text-emerald-300 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
@@ -275,47 +277,51 @@ export const RealtimeAirportWeatherWidget: React.FC<RealtimeAirportWeatherWidget
       </div>
 
       {/* Quick Major Hub Weather Chips */}
-      <div className="flex items-center gap-1.5 py-2.5 overflow-x-auto no-scrollbar border-b border-slate-800/60 text-xs">
-        <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider shrink-0 mr-1">Major Hubs:</span>
-        {[
-          { code: 'DEL', city: 'Delhi', icon: '☀️' },
-          { code: 'BOM', city: 'Mumbai', icon: '🌤️' },
-          { code: 'BLR', city: 'Bengaluru', icon: '⛅' },
-          { code: 'HYD', city: 'Hyderabad', icon: '☀️' },
-          { code: 'MAA', city: 'Chennai', icon: '☀️' },
-          { code: 'CCU', city: 'Kolkata', icon: '⛅' },
-          { code: 'GOI', city: 'Goa', icon: '🏖️' },
-          { code: 'COK', city: 'Kochi', icon: '🌴' },
-          { code: 'JAI', city: 'Jaipur', icon: '☀️' },
-          { code: 'DXB', city: 'Dubai', icon: '☀️' },
-          { code: 'SIN', city: 'Singapore', icon: '⛅' },
-          { code: 'LHR', city: 'London', icon: '🌧️' }
-        ].map(hub => {
-          const hubW = getAirportWeatherImmediate(hub.code);
-          const isSelectedHub = originWeather?.airportCode === hub.code;
-          return (
-            <button
-              key={hub.code}
-              type="button"
-              onClick={() => {
-                if (onSelectAirport) {
-                  onSelectAirport(hub.code);
-                }
-                setOriginWeather(getAirportWeatherImmediate(hub.code));
-                loadWeatherData(true, hub.code);
-              }}
-              className={`px-2.5 py-1 rounded-lg border font-medium shrink-0 flex items-center gap-1 transition-all cursor-pointer text-[11px] ${
-                isSelectedHub
-                  ? 'bg-sky-500/20 border-sky-400 text-white shadow-sm'
-                  : 'bg-slate-950/80 hover:bg-blue-600/20 border-slate-800 hover:border-blue-500/40 text-slate-300 hover:text-sky-300'
-              }`}
-            >
-              <span>{hub.icon}</span>
-              <span className="font-bold text-white">{hub.city} ({hub.code})</span>
-              <span className="text-amber-300 font-bold">{hubW.temperatureC}°C</span>
-            </button>
-          );
-        })}
+      <div className="py-2.5 border-b border-slate-800/60 text-xs space-y-1.5">
+        <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Major Hubs:</div>
+        <div className="max-h-44 overflow-y-auto pr-1 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-1.5 scrollbar-thin">
+          {[
+            { code: 'DEL', city: 'Delhi', icon: '☀️' },
+            { code: 'BOM', city: 'Mumbai', icon: '🌤️' },
+            { code: 'BLR', city: 'Bengaluru', icon: '⛅' },
+            { code: 'HYD', city: 'Hyderabad', icon: '☀️' },
+            { code: 'MAA', city: 'Chennai', icon: '☀️' },
+            { code: 'CCU', city: 'Kolkata', icon: '⛅' },
+            { code: 'GOI', city: 'Goa', icon: '🏖️' },
+            { code: 'COK', city: 'Kochi', icon: '🌴' },
+            { code: 'JAI', city: 'Jaipur', icon: '☀️' },
+            { code: 'DXB', city: 'Dubai', icon: '☀️' },
+            { code: 'SIN', city: 'Singapore', icon: '⛅' },
+            { code: 'LHR', city: 'London', icon: '🌧️' }
+          ].map(hub => {
+            const hubW = getAirportWeatherImmediate(hub.code);
+            const isSelectedHub = originWeather?.airportCode === hub.code;
+            return (
+              <button
+                key={hub.code}
+                type="button"
+                onClick={() => {
+                  if (onSelectAirport) {
+                    onSelectAirport(hub.code);
+                  }
+                  setOriginWeather(getAirportWeatherImmediate(hub.code));
+                  loadWeatherData(true, hub.code);
+                }}
+                className={`w-full px-3 py-1.5 rounded-lg border font-medium flex items-center justify-between gap-1 transition-all cursor-pointer text-xs ${
+                  isSelectedHub
+                    ? 'bg-sky-500/20 border-sky-400 text-white shadow-sm'
+                    : 'bg-slate-950/80 hover:bg-blue-600/20 border-slate-800 hover:border-blue-500/40 text-slate-300 hover:text-sky-300'
+                }`}
+              >
+                <div className="flex items-center gap-1.5 truncate">
+                  <span>{hub.icon}</span>
+                  <span className="font-bold text-white truncate">{hub.city} ({hub.code})</span>
+                </div>
+                <span className="text-amber-300 font-bold shrink-0">{hubW.temperatureC}°C</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Weather Stations Grid */}

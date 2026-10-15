@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAirline } from '../../context/AirlineContext';
 import { useLanguage } from '../../context/LanguageContext';
-import { getAirportWeatherImmediate } from '../../utils/realtimeWeather';
+import { getAirportWeatherImmediate, fetchLiveAirportWeather } from '../../utils/realtimeWeather';
 import { aiVoice } from '../../utils/aiVoice';
 import {
   Search,
@@ -75,17 +75,34 @@ export const FlightStatusPage: React.FC = () => {
     return () => clearInterval(timer);
   }, []);
 
-  // Filter flights + synthesize dynamic flight if user searches a specific flight number, PNR, or city not in base list
+  // Filter flights + synthesize dynamic flight if user searches a specific flight number, PNR, city, or route (e.g. BOM to PNQ)
   const displayedFlights = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
+    const routeSplit = q.split(/\s*(?:to|-|->|➔|\s)\s*/i).filter(Boolean);
+
     let baseList = flights.filter((f) => {
+      if (!q) return true;
+
+      // Check if user searched "origin to destination", e.g. "BOM to PNQ" or "Mumbai to Pune"
+      if (routeSplit.length >= 2) {
+        const p1 = routeSplit[0];
+        const p2 = routeSplit[1];
+        const matchOrig = f.origin.code.toLowerCase().includes(p1) || f.origin.city.toLowerCase().includes(p1);
+        const matchDest = f.destination.code.toLowerCase().includes(p2) || f.destination.city.toLowerCase().includes(p2);
+        if (matchOrig && matchDest) {
+          if (statusFilter === 'ALL') return true;
+          if (statusFilter === 'AIRBORNE') return f.status === 'On Time' || f.status === 'Boarding';
+          return f.status === statusFilter;
+        }
+      }
+
       const matchQuery =
-        !q ||
         f.flightNumber.toLowerCase().includes(q) ||
         f.origin.code.toLowerCase().includes(q) ||
         f.origin.city.toLowerCase().includes(q) ||
         f.destination.code.toLowerCase().includes(q) ||
-        f.destination.city.toLowerCase().includes(q);
+        f.destination.city.toLowerCase().includes(q) ||
+        f.airline.toLowerCase().includes(q);
 
       if (!matchQuery) return false;
 
@@ -102,64 +119,71 @@ export const FlightStatusPage: React.FC = () => {
       }
     }
 
-    // If user typed a flight number or city code that still has 0 matches, generate a live tracked flight so tracker always works
+    // If user typed a route or flight number that still has 0 matches, synthesize the exact requested route!
     if (q && baseList.length === 0 && q.length >= 2) {
+      const isRoute = routeSplit.length >= 2;
+      const origCode = (isRoute ? routeSplit[0].toUpperCase().slice(0, 3) : 'BOM');
+      const destCode = (isRoute ? routeSplit[1].toUpperCase().slice(0, 3) : 'PNQ');
+      const origCity = origCode === 'BOM' ? 'Mumbai' : origCode === 'DEL' ? 'New Delhi' : origCode === 'BLR' ? 'Bengaluru' : origCode;
+      const destCity = destCode === 'PNQ' ? 'Pune' : destCode === 'BOM' ? 'Mumbai' : destCode === 'GOI' ? 'Goa' : destCode;
+
       const upperQ = q.toUpperCase();
       const isFlightNo = /^[A-Z0-9-]{3,8}$/.test(upperQ);
+
       const syntheticFlight: Flight = {
         id: `LIVE-${upperQ}`,
-        flightNumber: isFlightNo ? (upperQ.includes('-') ? upperQ : `AW-${upperQ.replace(/\D/g, '') || '402'}`) : 'AW-709',
-        airline: 'AeroWings',
+        flightNumber: isFlightNo ? (upperQ.includes('-') ? upperQ : `AW-${upperQ.replace(/\D/g, '') || '312'}`) : 'AW-312',
+        airline: 'AeroWings Express',
         airlineCode: 'AW',
-        aircraft: 'Airbus A350-900 XWB',
-        routeType: 'inter_state',
+        aircraft: 'Airbus A320neo',
+        routeType: 'intra_state',
         origin: {
-          code: isFlightNo ? 'DEL' : upperQ.slice(0, 3),
-          city: isFlightNo ? 'New Delhi' : searchQuery.trim(),
-          name: `${isFlightNo ? 'Indira Gandhi' : searchQuery.trim()} International Airport`,
-          country: 'India',
-          terminal: 'T3'
-        },
-        destination: {
-          code: 'BLR',
-          city: 'Bengaluru',
-          name: 'Kempegowda International Airport',
+          code: origCode,
+          city: origCity,
+          name: `${origCity} International Airport`,
           country: 'India',
           terminal: 'T2'
         },
-        departureTime: '10:30',
-        arrivalTime: '13:15',
-        duration: '2h 45m',
-        durationMinutes: 165,
+        destination: {
+          code: destCode,
+          city: destCity,
+          name: `${destCity} International Airport`,
+          country: 'India',
+          terminal: 'T1'
+        },
+        departureTime: '14:20',
+        arrivalTime: '15:10',
+        duration: '50m',
+        durationMinutes: 50,
         stops: 0,
         daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
         status: 'On Time',
-        gate: 'A14',
-        terminal: 'T3',
-        prices: { economy: 4899, premium_economy: 7499, business: 14999, first: 26999 },
-        availableSeats: { economy: 42, premium_economy: 16, business: 8, first: 4 },
+        gate: 'B14',
+        terminal: 'T2',
+        prices: { economy: 2450, premium_economy: 4200, business: 8500, first: 14500 },
+        availableSeats: { economy: 48, premium_economy: 18, business: 12, first: 4 },
         totalSeats: 180,
         baggageAllowance: { cabin: '7 kg', checkIn: '15 kg' },
-        amenities: ['Wi-Fi', 'Live TV', 'Hot Meals', 'USB Power'],
+        amenities: ['Wi-Fi', 'Live TV', 'Snacks', 'USB Power'],
         weather: {
           condition: 'Clear',
-          temperatureC: 28,
+          temperatureC: 31,
           visibilityKm: 10,
-          windSpeedKmh: 12,
-          stormIndex: 5,
-          aiRiskScore: 3,
+          windSpeedKmh: 14,
+          stormIndex: 4,
+          aiRiskScore: 2,
           aiCancellationRisk: 'Low'
         },
         competitors: [],
-        avgMarketPrice: 5400,
-        savingsVsMarket: 501,
+        avgMarketPrice: 2850,
+        savingsVsMarket: 400,
         aiPrediction: {
           fareTrend: 'stable',
           predictedPriceChangePercent: 0,
-          fareTrendExplanation: 'Stable live fare corridor.',
+          fareTrendExplanation: 'Stable live intra-state corridor.',
           onTimeProbability: 99,
           bestTimeToBook: 'Book today',
-          seatRecommendation: 'Row 12A Window',
+          seatRecommendation: 'Row 4A Window',
           weatherReliabilityScore: 99
         }
       };
@@ -177,6 +201,23 @@ export const FlightStatusPage: React.FC = () => {
     );
   }, [displayedFlights, selectedFlightId, flights]);
 
+  // Eagerly sync live weather for active flight's origin & destination
+  useEffect(() => {
+    if (!activeFlight) return;
+    const loadLiveWeather = async () => {
+      try {
+        await Promise.all([
+          fetchLiveAirportWeather(activeFlight.origin.code),
+          fetchLiveAirportWeather(activeFlight.destination.code)
+        ]);
+        setLiveTick((prev) => prev + 1);
+      } catch {
+        // ignore fallback
+      }
+    };
+    loadLiveWeather();
+  }, [activeFlight?.origin?.code, activeFlight?.destination?.code]);
+
   // Compute realistic live telemetry metrics for the active flight
   const telemetry = useMemo(() => {
     if (!activeFlight) return null;
@@ -185,13 +226,24 @@ export const FlightStatusPage: React.FC = () => {
     const isDelayed = activeFlight.status === 'Delayed';
     const isBoarding = activeFlight.status === 'Boarding';
 
-    const baseProgress = isCancelled ? 0 : isBoarding ? 12 : isDelayed ? 38 : 55 + (seed % 32);
+    const baseProgress = isCancelled ? 0 : isBoarding ? 18 : isDelayed ? 38 : 58 + (seed % 28);
     const progressPercent = isCancelled
       ? 0
       : Math.min(96, baseProgress + (liveTick % 5));
 
-    const altitudeFt = isCancelled || isBoarding ? 0 : 34000 + ((seed * 130 + liveTick * 25) % 4200);
-    const groundSpeedKmh = isCancelled || isBoarding ? 0 : 845 + ((seed * 7 + liveTick * 3) % 48);
+    // Never 0 unless grounded/cancelled
+    const altitudeFt = isCancelled
+      ? 0
+      : isBoarding
+      ? 34500
+      : 33000 + ((seed * 130 + liveTick * 25) % 4200);
+
+    const groundSpeedKmh = isCancelled
+      ? 0
+      : isBoarding
+      ? 24
+      : 840 + ((seed * 7 + liveTick * 3) % 52);
+
     const mach = (groundSpeedKmh / 1062).toFixed(2);
     const distanceTotalKm = 720 + (seed % 1400);
     const distanceRemainingKm = Math.max(0, Math.round(distanceTotalKm * (1 - progressPercent / 100)));
@@ -551,8 +603,12 @@ export const FlightStatusPage: React.FC = () => {
         <div className="divide-y divide-slate-800/70">
           {displayedFlights.map((flight) => {
             const isSelected = activeFlight?.id === flight.id;
+            const seed = flight.flightNumber.split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
             const origW = getAirportWeatherImmediate(flight.origin.code);
             const destW = getAirportWeatherImmediate(flight.destination.code);
+            const altFt = flight.status === 'Cancelled' ? 0 : flight.status === 'Boarding' ? 34000 : 33000 + (seed % 3500);
+            const spdKmh = flight.status === 'Cancelled' ? 0 : flight.status === 'Boarding' ? 24 : 840 + (seed % 45);
+            const belt = `Belt ${(seed % 8) + 1}`;
 
             return (
               <div
@@ -581,8 +637,8 @@ export const FlightStatusPage: React.FC = () => {
                           {flight.aircraft}
                         </span>
                       </div>
-                      <div className="text-[11px] text-slate-400 mt-0.5">
-                        {origW.temperatureC}°C {flight.origin.code} ➔ {destW.temperatureC}°C {flight.destination.code}
+                      <div className="text-[11px] text-slate-400 mt-0.5 font-medium">
+                        {flight.origin.city} ➔ {flight.destination.city}
                       </div>
                     </div>
                   </div>
@@ -600,7 +656,7 @@ export const FlightStatusPage: React.FC = () => {
                       <div className="w-20 sm:w-28 h-px bg-slate-700 relative flex items-center justify-center">
                         <ArrowRight className="w-3.5 h-3.5 text-sky-400 bg-slate-950 px-0.5" />
                       </div>
-                      <span className="text-[10px] text-emerald-400 mt-1">Direct Radar</span>
+                      <span className="text-[10px] text-emerald-400 mt-1">Direct Flight</span>
                     </div>
 
                     <div className="text-right">
@@ -611,14 +667,14 @@ export const FlightStatusPage: React.FC = () => {
                   </div>
 
                   {/* Terminal & Gate */}
-                  <div className="lg:col-span-2 flex lg:flex-col justify-between gap-2 text-xs">
+                  <div className="lg:col-span-2 flex lg:flex-col justify-between gap-1 text-xs">
                     <div className="flex items-center gap-1.5 text-slate-300">
-                      <MapPin className="w-3.5 h-3.5 text-slate-500" />
-                      <span>Terminal: <strong className="text-white">{flight.terminal || 'T3'}</strong></span>
+                      <MapPin className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                      <span>Term: <strong className="text-white">{flight.terminal || 'T2'}</strong> • Gate <strong className="text-amber-300">{flight.gate || 'A12'}</strong></span>
                     </div>
                     <div className="flex items-center gap-1.5 text-slate-300">
-                      <Clock className="w-3.5 h-3.5 text-slate-500" />
-                      <span>Gate: <strong className="text-sky-400">{flight.gate || 'A12'}</strong></span>
+                      <Luggage className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                      <span>Baggage: <strong className="text-purple-300">{belt}</strong></span>
                     </div>
                   </div>
 
@@ -636,6 +692,26 @@ export const FlightStatusPage: React.FC = () => {
                     >
                       <Volume2 className="w-4 h-4" />
                     </button>
+                  </div>
+                </div>
+
+                {/* Sub-strip with Cruising Altitude, Ground Speed, Origin Weather, Destination Weather */}
+                <div className="mt-3 pt-2.5 border-t border-slate-800/60 grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                  <div className="flex items-center gap-1.5 text-slate-400 bg-slate-950/60 px-2.5 py-1 rounded-lg">
+                    <Navigation className="w-3 h-3 text-sky-400 shrink-0" />
+                    <span>Altitude: <strong className="text-white font-mono">{altFt.toLocaleString()} ft</strong></span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-slate-400 bg-slate-950/60 px-2.5 py-1 rounded-lg">
+                    <Gauge className="w-3 h-3 text-emerald-400 shrink-0" />
+                    <span>Speed: <strong className="text-white font-mono">{spdKmh} km/h</strong></span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-slate-400 bg-slate-950/60 px-2.5 py-1 rounded-lg truncate">
+                    <Wind className="w-3 h-3 text-amber-400 shrink-0" />
+                    <span className="truncate">{flight.origin.code} Weather: <strong className="text-amber-300 font-bold">{origW.temperatureC}°C</strong> ({origW.conditionText.split(' ')[0]})</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-slate-400 bg-slate-950/60 px-2.5 py-1 rounded-lg truncate">
+                    <ShieldCheck className="w-3 h-3 text-emerald-400 shrink-0" />
+                    <span className="truncate">{flight.destination.code} Weather: <strong className="text-emerald-300 font-bold">{destW.temperatureC}°C</strong> ({destW.conditionText.split(' ')[0]})</span>
                   </div>
                 </div>
               </div>

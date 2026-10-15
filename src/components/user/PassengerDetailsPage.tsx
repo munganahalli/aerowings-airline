@@ -50,8 +50,6 @@ export const PassengerDetailsPage: React.FC = () => {
   const [contactEmail, setContactEmail] = useState<string>(userProfile.email || '');
   const [contactPhone, setContactPhone] = useState<string>(verifiedBookingPhone || userProfile.phone || '+91 8971541794');
   const [verifyingIndex, setVerifyingIndex] = useState<number | null>(null);
-  const [sendingStepOtp, setSendingStepOtp] = useState<boolean>(false);
-  const [stepOtpAlert, setStepOtpAlert] = useState<string | null>(null);
 
   if (!selectedFlight) {
     return (
@@ -73,7 +71,12 @@ export const PassengerDetailsPage: React.FC = () => {
   const isInternational = selectedFlight.origin.country !== 'India' || selectedFlight.destination.country !== 'India';
   const fare = calculateFareBreakdown();
 
-  // Helper validation functions
+
+
+  // Check if an individual passenger has all personal details & visa verified
+  const isDomesticWithinIndia = selectedFlight.origin.country.toLowerCase() === 'india' && selectedFlight.destination.country.toLowerCase() === 'india';
+
+  // Helper validation functions based on domestic vs international rules
   const validateAadhaar = (num?: string): boolean => {
     if (!num) return false;
     const clean = num.replace(/\s+/g, '');
@@ -81,34 +84,35 @@ export const PassengerDetailsPage: React.FC = () => {
   };
 
   const validatePan = (pan?: string): boolean => {
+    if (isDomesticWithinIndia) return true; // PAN not needed for domestic within India
     if (!pan) return false;
     return /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(pan.toUpperCase().trim());
   };
 
   const validateVisa = (visa?: string): boolean => {
-    if (!isInternational) return true; // Domestic flights exempt
-    if (!visa || visa.trim().length < 6 || visa === 'DOMESTIC_EXEMPT') return false;
+    if (isDomesticWithinIndia) return true; // Visa not needed for domestic within India
+    if (!visa || visa.trim().length < 6) return false;
     return true;
   };
 
-  // Check if an individual passenger has all personal details & visa verified
+  // Check if an individual passenger has all required documents verified
   const isPassengerFullyVerified = (p: typeof passengers[0]): boolean => {
     const hasName = Boolean(p.firstName && p.firstName.trim().length >= 2 && p.lastName && p.lastName.trim().length >= 2);
     const hasAadhaar = validateAadhaar(p.aadhaarNumber);
-    const hasPan = validatePan(p.panNumber);
-    const hasVisa = validateVisa(p.visaNumber);
-    return Boolean(p.isVerified && hasName && hasAadhaar && hasPan && hasVisa);
+    const hasPan = isDomesticWithinIndia || validatePan(p.panNumber);
+    const hasVisa = isDomesticWithinIndia || validateVisa(p.visaNumber);
+    return Boolean(hasName && hasAadhaar && hasPan && hasVisa);
   };
 
   // Count unverified passengers
   const unverifiedCount = passengers.filter(p => !isPassengerFullyVerified(p)).length;
   const isAllVerified = unverifiedCount === 0;
 
-  // Single Passenger Verification Handler
+  // Single Passenger Manual Verification Handler (User-triggered validation)
   const handleVerifyPassenger = (idx: number) => {
     const p = passengers[idx];
     if (!p.firstName || p.firstName.trim().length < 2) {
-      addToast(`Traveler ${idx + 1}: Please enter First & Middle Name (minimum 2 letters).`, 'error');
+      addToast(`Traveler ${idx + 1}: Please enter First Name (minimum 2 characters).`, 'error');
       return;
     }
     if (!p.lastName || p.lastName.trim().length < 2) {
@@ -116,14 +120,14 @@ export const PassengerDetailsPage: React.FC = () => {
       return;
     }
     if (!p.aadhaarNumber || !validateAadhaar(p.aadhaarNumber)) {
-      addToast(`Traveler ${idx + 1}: Please enter a valid 12-digit Aadhaar Card number.`, 'error');
+      addToast(`Traveler ${idx + 1}: Please enter a valid 12-digit Aadhaar Card number (e.g. 5412 7890 2341).`, 'error');
       return;
     }
-    if (!p.panNumber || !validatePan(p.panNumber)) {
+    if (!isDomesticWithinIndia && (!p.panNumber || !validatePan(p.panNumber))) {
       addToast(`Traveler ${idx + 1}: Please enter a valid 10-character PAN Card (e.g. ABCDE1234F).`, 'error');
       return;
     }
-    if (isInternational && (!p.visaNumber || !validateVisa(p.visaNumber))) {
+    if (!isDomesticWithinIndia && (!p.visaNumber || !validateVisa(p.visaNumber))) {
       addToast(`Traveler ${idx + 1}: Valid International Visa / Travel Permit number is mandatory for international flights.`, 'error');
       return;
     }
@@ -132,14 +136,28 @@ export const PassengerDetailsPage: React.FC = () => {
     setTimeout(() => {
       updatePassenger(idx, {
         isVerified: true,
-        visaStatus: 'Verified',
+        visaStatus: isDomesticWithinIndia ? 'Exempt - Domestic Flight' : 'Verified',
         verifiedAt: new Date().toISOString()
       });
 
       setVerifyingIndex(null);
-      addToast(`✅ Traveler ${idx + 1} (${p.firstName} ${p.lastName}): Personal Details & Visa Verified!`, 'success');
-      aiVoice.speak(`Traveler ${idx + 1} personal details and visa verified successfully.`);
-    }, 600);
+      addToast(`✅ Traveler ${idx + 1} (${p.firstName} ${p.lastName}): ${isDomesticWithinIndia ? 'Aadhaar Card Verified (Domestic Flight)' : 'Aadhaar, PAN & Visa Verified (International Flight)'}!`, 'success');
+      aiVoice.speak(`Traveler ${idx + 1} documents verified successfully.`);
+    }, 350);
+  };
+
+  // Auto verify all travelers when user clicks 'Auto verify all travelers'
+  const handleAutoVerifyAllTravelers = () => {
+    passengers.forEach((_, idx) => {
+      handleFillPassengerSample(idx);
+    });
+    addToast(
+      isDomesticWithinIndia
+        ? '✅ Auto-verified all travelers with 12-digit Aadhaar cards (Domestic Flight).'
+        : '✅ Auto-verified all travelers with Aadhaar, PAN & Visa credentials (International Flight).',
+      'success'
+    );
+    aiVoice.speak('All travelers verified successfully.');
   };
 
   // Quick-fill valid credentials for a single passenger
@@ -158,13 +176,13 @@ export const PassengerDetailsPage: React.FC = () => {
       gender: sample.gender as any,
       dob: sample.dob,
       aadhaarNumber: sample.aadhaar,
-      panNumber: sample.pan,
-      visaNumber: isInternational ? sample.visa : 'DOMESTIC_EXEMPT',
-      visaStatus: 'Verified',
+      panNumber: isDomesticWithinIndia ? '' : sample.pan,
+      visaNumber: isDomesticWithinIndia ? 'DOMESTIC_EXEMPT' : sample.visa,
+      visaStatus: isDomesticWithinIndia ? 'Exempt - Domestic Flight' : 'Verified',
       isVerified: true,
       verifiedAt: new Date().toISOString()
     });
-    addToast(`✅ Traveler ${idx + 1}: Valid Details & Visa Verified!`, 'success');
+    addToast(`✅ Traveler ${idx + 1}: ${isDomesticWithinIndia ? 'Aadhaar Verified' : 'Aadhaar, PAN & Visa Verified'}!`, 'success');
     aiVoice.speak(`Traveler ${idx + 1} verified.`);
   };
 
@@ -189,9 +207,9 @@ export const PassengerDetailsPage: React.FC = () => {
             lastName: p.lastName || 'Passenger',
             gender: p.gender || 'Male',
             aadhaarNumber: '5412 7890 2341',
-            panNumber: 'ABCDE1234F',
-            visaNumber: isInternational ? 'V-IN-987654' : 'DOMESTIC_EXEMPT',
-            visaStatus: 'Verified',
+            panNumber: isDomesticWithinIndia ? '' : 'ABCDE1234F',
+            visaNumber: isDomesticWithinIndia ? 'DOMESTIC_EXEMPT' : 'V-IN-987654',
+            visaStatus: isDomesticWithinIndia ? 'Exempt - Domestic Flight' : 'Verified',
             isVerified: true
           });
         }
@@ -212,67 +230,41 @@ export const PassengerDetailsPage: React.FC = () => {
     return `+${digits}`;
   };
 
-  const handleSendStepOtp = async () => {
-    const clean = contactPhone.trim();
-    if (!clean || clean.replace(/\D/g, '').length < 8) {
-      addToast('Please enter a valid mobile phone number to generate an OTP.', 'error');
-      return;
-    }
-    const normalized = normalizePhone(clean);
-    setSendingStepOtp(true);
-    try {
-      const res = await fetch('/api/otp/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phoneNumber: normalized, purpose: 'flight_booking' })
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        const generatedOtp = String(data.otp || data.fallbackOtp || data.devPreviewOtp || '');
-        const formattedPhone = data.phoneNumber || normalized;
-        if (typeof setVerifiedBookingPhone === 'function') {
-          setVerifiedBookingPhone(formattedPhone);
-        }
-        const msg = `OTP sent to ${formattedPhone}: ${generatedOtp}`;
-        setStepOtpAlert(msg);
-        addToast(msg, 'success');
-      } else {
-        addToast(data.error || 'Failed to generate OTP for this phone number.', 'error');
-      }
-    } catch {
-      addToast('Network error while sending OTP.', 'error');
-    } finally {
-      setSendingStepOtp(false);
-    }
-  };
-
   // STRICT PROCEED HANDLER:
-  // User cannot book or proceed to another step without personal details and visa verification!
+  // Validates manual user inputs or auto-verified credentials; NO phone OTP!
   const handleProceedToSeats = () => {
     const unverifiedTravelers: string[] = [];
 
     passengers.forEach((p, i) => {
       const hasName = Boolean(p.firstName && p.firstName.trim().length >= 2 && p.lastName && p.lastName.trim().length >= 2);
       const hasAadhaar = validateAadhaar(p.aadhaarNumber);
-      const hasPan = validatePan(p.panNumber);
-      const hasVisa = validateVisa(p.visaNumber);
+      const hasPan = isDomesticWithinIndia || validatePan(p.panNumber);
+      const hasVisa = isDomesticWithinIndia || validateVisa(p.visaNumber);
 
-      if (!hasName || !hasAadhaar || !hasPan || !hasVisa || !p.isVerified) {
-        let reason = '';
-        if (!hasName) reason = 'Name missing';
-        else if (!hasAadhaar) reason = 'Aadhaar invalid';
-        else if (!hasPan) reason = 'PAN invalid';
-        else if (!hasVisa) reason = 'Visa verification missing';
-        else if (!p.isVerified) reason = 'ID not verified online';
-        unverifiedTravelers.push(`Traveler ${i + 1} (${reason})`);
+      if (!hasName) {
+        unverifiedTravelers.push(`Traveler ${i + 1} (Name missing)`);
+      } else if (!hasAadhaar) {
+        unverifiedTravelers.push(`Traveler ${i + 1} (Aadhaar 12 digits missing/invalid)`);
+      } else if (!isDomesticWithinIndia && !hasPan) {
+        unverifiedTravelers.push(`Traveler ${i + 1} (PAN card invalid)`);
+      } else if (!isDomesticWithinIndia && !hasVisa) {
+        unverifiedTravelers.push(`Traveler ${i + 1} (Visa number invalid)`);
+      } else {
+        // Automatically ensure verified flag is set for valid inputs
+        if (!p.isVerified) {
+          updatePassenger(i, {
+            isVerified: true,
+            visaStatus: isDomesticWithinIndia ? 'Exempt - Domestic Flight' : 'Verified',
+            verifiedAt: new Date().toISOString()
+          });
+        }
       }
     });
 
-    // CANNOT PROCEED IF UNVERIFIED: Strictly enforce user request!
     if (unverifiedTravelers.length > 0) {
-      addToast(`⛔ Verification Mandatory: ${unverifiedTravelers.join(', ')}. Complete personal details & Visa verification before proceeding to Step 3.`, 'error');
-      aiVoice.speak('Verification incomplete. Personal details and visa verification are mandatory before booking or selecting seats.');
-      return; // STRICT STOP! DO NOT NAVIGATE TO ANOTHER STEP!
+      addToast(`⛔ Verification Incomplete: ${unverifiedTravelers.join(', ')}. Please complete required documents before proceeding.`, 'error');
+      aiVoice.speak('Verification incomplete. Please enter valid passenger identification details.');
+      return; // STRICT STOP!
     }
 
     if (!contactEmail.trim() || !contactEmail.includes('@')) {
@@ -296,24 +288,8 @@ export const PassengerDetailsPage: React.FC = () => {
       // ignore storage error
     }
 
-    // Also trigger dynamic OTP notification for the submitted phone number if not yet sent
-    fetch('/api/otp/send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phoneNumber: normalizedPhone, purpose: 'flight_booking' })
-    })
-      .then(r => r.json())
-      .then(data => {
-        if (data?.success) {
-          const generatedOtp = String(data.otp || data.fallbackOtp || data.devPreviewOtp || '');
-          const formattedPhone = data.phoneNumber || normalizedPhone;
-          addToast(`OTP sent to ${formattedPhone}: ${generatedOtp}`, 'success');
-        }
-      })
-      .catch(() => {});
-
-    addToast('✅ All traveler details & Visa verified! Proceeding to Step 3: Choose Seats.', 'success');
-    aiVoice.speak('All personal details and visa clearances verified. Proceeding to seat selection.');
+    addToast('✅ All traveler documents verified! Proceeding to Step 3: Choose Seats.', 'success');
+    aiVoice.speak('All traveler details verified. Proceeding to seat selection.');
     setUserView('seats');
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
   };
@@ -324,9 +300,21 @@ export const PassengerDetailsPage: React.FC = () => {
       <BookingStepBar
         currentStep={2}
         stepTitle="Personal & Document Verification"
-        stepSubtitle="Mandatory Aadhaar Card, PAN Card & Visa verification before ticket generation"
-        voiceText="Step 2: Traveler details and document verification for Aadhaar, PAN card, and Visa."
-        firstTimeFlyerTip="🛡️ Identity Verification: In accordance with aviation regulations, verify each traveler's Aadhaar and PAN card to generate verified IATA e-tickets."
+        stepSubtitle={
+          isDomesticWithinIndia
+            ? 'Intra-India Flight: Only 12-Digit Aadhaar Card verification required (No PAN or Visa needed)'
+            : 'International Flight: Mandatory Aadhaar Card, PAN Card & Visa verification before ticket generation'
+        }
+        voiceText={
+          isDomesticWithinIndia
+            ? 'Step 2: Traveler details and Aadhaar verification for domestic flight.'
+            : 'Step 2: Traveler details, Aadhaar, PAN card, and international Visa verification.'
+        }
+        firstTimeFlyerTip={
+          isDomesticWithinIndia
+            ? '🛡️ Domestic Travel Verification: Enter a valid 12-digit Aadhaar Card for each traveler. PAN and Visa are exempt.'
+            : "🛡️ International Travel Verification: Government mandates Aadhaar, PAN, and Visa verification for overseas travel."
+        }
       />
 
       {/* Flight Recap Banner */}
@@ -341,9 +329,13 @@ export const PassengerDetailsPage: React.FC = () => {
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
                 {selectedFlight.aircraft}
               </span>
-              {isInternational && (
+              {isDomesticWithinIndia ? (
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">
+                  🇮🇳 Domestic India Flight (Aadhaar Only)
+                </span>
+              ) : (
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30 font-bold">
-                  International Flight
+                  ✈️ International Flight (Aadhaar + PAN + Visa)
                 </span>
               )}
             </div>
@@ -353,14 +345,18 @@ export const PassengerDetailsPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Quick Fill Button */}
+        {/* Quick Fill / Auto-Verify Button */}
         <button
           type="button"
-          onClick={() => passengers.forEach((_, i) => handleFillPassengerSample(i))}
-          className="px-3.5 py-2 bg-gradient-to-r from-emerald-600/30 to-blue-600/30 hover:from-emerald-600/40 hover:to-blue-600/40 text-emerald-300 border border-emerald-500/40 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
+          onClick={handleAutoVerifyAllTravelers}
+          className="px-4 py-2.5 bg-gradient-to-r from-emerald-600/30 to-blue-600/30 hover:from-emerald-600/40 hover:to-blue-600/40 text-emerald-300 border border-emerald-500/40 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
         >
           <Zap className="w-3.5 h-3.5 text-emerald-400 fill-emerald-400" />
-          <span>⚡ Auto-Verify All Travelers (Aadhaar + PAN + Visa)</span>
+          <span>
+            {isDomesticWithinIndia
+              ? '⚡ Auto-Verify All Travelers (Aadhaar Only)'
+              : '⚡ Auto-Verify All Travelers (Aadhaar + PAN + Visa)'}
+          </span>
         </button>
       </div>
 
@@ -543,7 +539,7 @@ export const PassengerDetailsPage: React.FC = () => {
 
               {/* DOCUMENT VERIFICATION SECTION (Aadhaar, PAN, Visa) */}
               <div className="mt-4 p-4 bg-slate-950/80 border border-slate-800 rounded-xl space-y-3">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between flex-wrap gap-2">
                   <div className="flex items-center gap-2">
                     <CreditCard className="w-4 h-4 text-sky-400" />
                     <span className="text-xs font-bold text-white">Government ID Verification</span>
@@ -551,86 +547,180 @@ export const PassengerDetailsPage: React.FC = () => {
                   <span className="text-[10px] text-slate-400 font-mono">UIDAI / NSDL / IATA Connected</span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className={`grid grid-cols-1 ${isDomesticWithinIndia ? 'sm:grid-cols-1 max-w-md' : 'sm:grid-cols-3'} gap-3`}>
                   {/* Aadhaar Card */}
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-300 mb-1 flex items-center justify-between">
+                  <div className="space-y-1.5">
+                    <label className="block text-[11px] font-semibold text-slate-300 flex items-center justify-between">
                       <span>Aadhaar Card (12-Digit) *</span>
                       {isAadhaarValid ? (
                         <span className="text-[10px] text-emerald-400 font-bold flex items-center gap-0.5">
-                          <Check className="w-3 h-3" /> Valid
+                          <Check className="w-3 h-3" /> Valid UIDAI
                         </span>
                       ) : (
-                        <span className="text-[10px] text-slate-500">12 digits</span>
+                        <span className="text-[10px] text-slate-500">12 digits required</span>
                       )}
                     </label>
-                    <input
-                      type="text"
-                      maxLength={14}
-                      value={p.aadhaarNumber || ''}
-                      onChange={(e) => {
-                        let v = e.target.value.replace(/[^\d]/g, '').slice(0, 12);
-                        // Format as XXXX XXXX XXXX
-                        const formatted = v.match(/.{1,4}/g)?.join(' ') || v;
-                        updatePassenger(idx, { aadhaarNumber: formatted });
-                      }}
-                      placeholder="5432 8901 2345"
-                      className={`w-full bg-slate-900 border rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none ${
-                        isAadhaarValid ? 'border-emerald-500/50 text-emerald-300' : 'border-slate-700'
-                      }`}
-                    />
+                    <div className="flex gap-1.5">
+                      <input
+                        type="text"
+                        maxLength={14}
+                        value={p.aadhaarNumber || ''}
+                        onChange={(e) => {
+                          const v = e.target.value.replace(/[^\d]/g, '').slice(0, 12);
+                          const formatted = v.match(/.{1,4}/g)?.join(' ') || v;
+                          const isValidNow = v.length === 12;
+                          updatePassenger(idx, {
+                            aadhaarNumber: formatted,
+                            isVerified: isDomesticWithinIndia ? (isValidNow && Boolean(p.firstName && p.lastName)) : p.isVerified
+                          });
+                        }}
+                        placeholder="5432 8901 2345"
+                        className={`w-full bg-slate-900 border rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none ${
+                          isAadhaarValid ? 'border-emerald-500/50 text-emerald-300' : 'border-slate-700'
+                        }`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (isAadhaarValid) {
+                            addToast(`Traveler ${idx + 1}: Aadhaar Card ${p.aadhaarNumber} verified successfully via UIDAI!`, 'success');
+                            if (isDomesticWithinIndia) {
+                              updatePassenger(idx, { isVerified: true, visaStatus: 'Exempt - Domestic Flight' });
+                            }
+                          } else {
+                            addToast(`Traveler ${idx + 1}: Please enter a full 12-digit Aadhaar number before verifying.`, 'error');
+                          }
+                        }}
+                        className={`px-2.5 py-1.5 rounded-xl text-[10px] font-bold border transition-colors cursor-pointer shrink-0 ${
+                          isAadhaarValid
+                            ? 'bg-emerald-600/20 border-emerald-500/40 text-emerald-300'
+                            : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        Verify
+                      </button>
+                    </div>
                   </div>
 
-                  {/* PAN Card */}
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-300 mb-1 flex items-center justify-between">
-                      <span>PAN Card (10 Alphanumeric) *</span>
-                      {isPanValid ? (
-                        <span className="text-[10px] text-emerald-400 font-bold flex items-center gap-0.5">
-                          <Check className="w-3 h-3" /> Valid
-                        </span>
-                      ) : (
-                        <span className="text-[10px] text-slate-500">ABCDE1234F</span>
-                      )}
-                    </label>
-                    <input
-                      type="text"
-                      maxLength={10}
-                      value={p.panNumber || ''}
-                      onChange={(e) => {
-                        updatePassenger(idx, { panNumber: e.target.value.toUpperCase().trim() });
-                      }}
-                      placeholder="ABCDE1234F"
-                      className={`w-full bg-slate-900 border rounded-xl px-3 py-2 text-xs font-mono uppercase text-white focus:outline-none ${
-                        isPanValid ? 'border-emerald-500/50 text-emerald-300' : 'border-slate-700'
-                      }`}
-                    />
-                  </div>
+                  {!isDomesticWithinIndia && (
+                    <>
+                      {/* PAN Card */}
+                      <div className="space-y-1.5">
+                        <label className="block text-[11px] font-semibold text-slate-300 flex items-center justify-between">
+                          <span>PAN Card (10 Alphanumeric) *</span>
+                          {isPanValid ? (
+                            <span className="text-[10px] text-emerald-400 font-bold flex items-center gap-0.5">
+                              <Check className="w-3 h-3" /> Valid NSDL
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-slate-500">ABCDE1234F</span>
+                          )}
+                        </label>
+                        <div className="flex gap-1.5">
+                          <input
+                            type="text"
+                            maxLength={10}
+                            value={p.panNumber || ''}
+                            onChange={(e) => {
+                              const v = e.target.value.toUpperCase().trim();
+                              updatePassenger(idx, { panNumber: v });
+                            }}
+                            placeholder="ABCDE1234F"
+                            className={`w-full bg-slate-900 border rounded-xl px-3 py-2 text-xs font-mono uppercase text-white focus:outline-none ${
+                              isPanValid ? 'border-emerald-500/50 text-emerald-300' : 'border-slate-700'
+                            }`}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (isPanValid) {
+                                addToast(`Traveler ${idx + 1}: PAN Card ${p.panNumber} verified successfully via NSDL portal!`, 'success');
+                              } else {
+                                addToast(`Traveler ${idx + 1}: Please enter a valid 10-character PAN Card (e.g. ABCDE1234F).`, 'error');
+                              }
+                            }}
+                            className={`px-2.5 py-1.5 rounded-xl text-[10px] font-bold border transition-colors cursor-pointer shrink-0 ${
+                              isPanValid
+                                ? 'bg-emerald-600/20 border-emerald-500/40 text-emerald-300'
+                                : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
+                            }`}
+                          >
+                            Verify
+                          </button>
+                        </div>
+                      </div>
 
-                  {/* Visa / Passport */}
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-300 mb-1 flex items-center justify-between">
-                      <span>Visa / Travel Permit {isInternational ? '*' : '(Optional)'}</span>
-                      {isVisaValid ? (
-                        <span className="text-[10px] text-emerald-400 font-bold flex items-center gap-0.5">
-                          <Check className="w-3 h-3" /> {isInternational ? 'Active' : 'Domestic'}
-                        </span>
-                      ) : (
-                        <span className="text-[10px] text-amber-400">Required for Intl</span>
-                      )}
-                    </label>
-                    <input
-                      type="text"
-                      value={p.visaNumber || (isInternational ? '' : 'DOMESTIC_EXEMPT')}
-                      onChange={(e) => {
-                        updatePassenger(idx, { visaNumber: e.target.value.toUpperCase().trim() });
-                      }}
-                      placeholder={isInternational ? "e.g. V-IN-987654" : "Domestic flight exempt"}
-                      className={`w-full bg-slate-900 border rounded-xl px-3 py-2 text-xs font-mono uppercase text-white focus:outline-none ${
-                        isVisaValid ? 'border-emerald-500/50 text-emerald-300' : 'border-slate-700'
-                      }`}
-                    />
-                  </div>
+                      {/* Visa / Passport */}
+                      <div className="space-y-1.5">
+                        <label className="block text-[11px] font-semibold text-slate-300 flex items-center justify-between">
+                          <span>Visa / Travel Permit *</span>
+                          {isVisaValid ? (
+                            <span className="text-[10px] text-emerald-400 font-bold flex items-center gap-0.5">
+                              <Check className="w-3 h-3" /> Valid IATA
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-amber-400">Required for Intl</span>
+                          )}
+                        </label>
+                        <div className="flex gap-1.5">
+                          <input
+                            type="text"
+                            value={p.visaNumber || ''}
+                            onChange={(e) => {
+                              const v = e.target.value.toUpperCase().trim();
+                              updatePassenger(idx, { visaNumber: v });
+                            }}
+                            placeholder="e.g. V-IN-987654"
+                            className={`w-full bg-slate-900 border rounded-xl px-3 py-2 text-xs font-mono uppercase text-white focus:outline-none ${
+                              isVisaValid ? 'border-emerald-500/50 text-emerald-300' : 'border-slate-700'
+                            }`}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (isVisaValid) {
+                                addToast(`Traveler ${idx + 1}: International Visa ${p.visaNumber} cleared with IATA travel database!`, 'success');
+                              } else {
+                                addToast(`Traveler ${idx + 1}: Please enter a valid Visa number (minimum 6 characters).`, 'error');
+                              }
+                            }}
+                            className={`px-2.5 py-1.5 rounded-xl text-[10px] font-bold border transition-colors cursor-pointer shrink-0 ${
+                              isVisaValid
+                                ? 'bg-emerald-600/20 border-emerald-500/40 text-emerald-300'
+                                : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
+                            }`}
+                          >
+                            Verify
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between pt-2 border-t border-slate-800/80 flex-wrap gap-2">
+                  {isDomesticWithinIndia ? (
+                    <div className="flex items-center gap-1.5 text-emerald-400 text-xs">
+                      <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                      <span>Domestic Flight (India): Only 12-digit Aadhaar Card is required. PAN and Visa are not needed.</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5 text-purple-300 text-xs">
+                      <ShieldCheck className="w-3.5 h-3.5 shrink-0 text-purple-400" />
+                      <span>International Flight: Aadhaar, PAN card, and International Visa must all be verified.</span>
+                    </div>
+                  )}
+
+                  {/* Manual verify button for traveler */}
+                  <button
+                    type="button"
+                    onClick={() => handleVerifyPassenger(idx)}
+                    disabled={verifyingIndex === idx}
+                    className="px-3 py-1.5 rounded-xl bg-sky-600/30 hover:bg-sky-600/50 border border-sky-400/50 text-sky-200 text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all ml-auto"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5 text-sky-400" />
+                    <span>{verifyingIndex === idx ? 'Verifying...' : `Verify Traveler ${idx + 1} Documents`}</span>
+                  </button>
                 </div>
               </div>
             </div>
@@ -671,40 +761,24 @@ export const PassengerDetailsPage: React.FC = () => {
 
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1.5" htmlFor="pax-contact-phone">
-                {t('passenger.phone', 'Mobile Number')} * <span className="text-emerald-400 text-[10px]">(Dynamic OTP & SMS Alerts)</span>
+                {t('passenger.phone', 'Mobile Number')} * <span className="text-emerald-400 text-[10px]">(Direct SMS E-Ticket & Gate Alerts)</span>
               </label>
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
-                  <input
-                    type="tel"
-                    id="pax-contact-phone"
-                    value={contactPhone}
-                    onChange={(e) => {
-                      setContactPhone(e.target.value);
-                      if (typeof setVerifiedBookingPhone === 'function') {
-                        setVerifiedBookingPhone(e.target.value);
-                      }
-                    }}
-                    placeholder="+91 8971541794"
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-10 pr-3 py-2.5 text-xs font-mono text-white focus:outline-none focus:border-blue-500"
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={handleSendStepOtp}
-                  disabled={sendingStepOtp}
-                  className="px-3.5 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white font-bold text-xs shrink-0 cursor-pointer transition-colors"
-                >
-                  {sendingStepOtp ? 'Sending...' : 'Send OTP'}
-                </button>
+              <div className="relative">
+                <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                <input
+                  type="tel"
+                  id="pax-contact-phone"
+                  value={contactPhone}
+                  onChange={(e) => {
+                    setContactPhone(e.target.value);
+                    if (typeof setVerifiedBookingPhone === 'function') {
+                      setVerifiedBookingPhone(e.target.value);
+                    }
+                  }}
+                  placeholder="+91 8971541794"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-10 pr-3 py-2.5 text-xs font-mono text-white focus:outline-none focus:border-blue-500"
+                />
               </div>
-              {stepOtpAlert && (
-                <div className="mt-2 p-2.5 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-xs font-mono font-bold flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span>{stepOtpAlert}</span>
-                </div>
-              )}
             </div>
           </div>
         </div>

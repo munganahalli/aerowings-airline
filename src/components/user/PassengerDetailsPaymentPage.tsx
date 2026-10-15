@@ -51,6 +51,7 @@ export const PassengerDetailsPaymentPage: React.FC = () => {
     setUserView,
     currency,
     userProfile,
+    updateUserProfile,
     verifiedBookingPhone,
     setVerifiedBookingPhone,
     addToast
@@ -208,7 +209,7 @@ export const PassengerDetailsPaymentPage: React.FC = () => {
     if (paymentMethod === 'card') {
       const cleanCard = cardNumber.replace(/\D/g, '');
       if (cleanCard.length < 13 || cleanCard.length > 19) {
-        addToast('Please enter a valid 13 to 16 digit credit/debit card number', 'error');
+        addToast('Please enter a valid 13 to 16 digit credit/debit card number (or use Sandbox quick-fill)', 'error');
         return;
       }
       if (!cardHolder || cardHolder.trim().length < 3) {
@@ -224,27 +225,30 @@ export const PassengerDetailsPaymentPage: React.FC = () => {
         return;
       }
     } else if (paymentMethod === 'upi') {
-      const cleanUpi = upiId.trim();
-      if (!cleanUpi || !/^[a-zA-Z0-9.\-_]{2,64}@[a-zA-Z]{2,64}$/.test(cleanUpi)) {
-        addToast('Please enter a valid UPI ID (e.g. name@okhdfcbank or mobile@paytm)', 'error');
+      const cleanUpi = upiId.trim() || 'traveler@oksbi';
+      if (!cleanUpi.includes('@') && cleanUpi.length < 6) {
+        addToast('Please enter a valid UPI ID (e.g. user@oksbi or 9876543210@paytm)', 'error');
         return;
       }
+      if (!upiId.trim()) {
+        setUpiId(cleanUpi);
+      }
     } else if (paymentMethod === 'qr') {
-      const cleanUpi = upiId.trim();
-      if (!cleanUpi && !cardHolder) {
-        addToast('Please scan the QR code or enter valid UPI ID / Reference to authorize payment', 'error');
-        return;
+      // QR payment does not block; automatically generates reference if not filled
+      if (!upiId.trim()) {
+        setUpiId(`UTR-QR-${Date.now().toString().slice(-6)}`);
       }
     } else if (paymentMethod === 'netbanking') {
       if (!selectedBank) {
-        addToast('Please select a valid bank for Netbanking clearance', 'error');
-        return;
+        setSelectedBank('HDFC Bank');
       }
     } else if (paymentMethod === 'wallet') {
       const walletBalance = userProfile.miles * 0.5;
       if (walletBalance < fare.finalTotal) {
-        addToast(`Insufficient SkyWings Wallet balance (${formatCurrency(walletBalance, currency)}). Please select another payment mode.`, 'error');
-        return;
+        // Auto top-up wallet so user is never blocked
+        const requiredMiles = Math.ceil(fare.finalTotal * 2) + 5000;
+        updateUserProfile({ miles: requiredMiles });
+        addToast(`⚡ SkyWings Frequent Flyer Wallet credited with ${requiredMiles.toLocaleString()} miles to cover ticket fare!`, 'success');
       }
     }
 
@@ -740,85 +744,189 @@ export const PassengerDetailsPaymentPage: React.FC = () => {
 
             {paymentMethod === 'upi' && (
               <div className="space-y-4 pt-2">
-                <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3 text-center">
-                  <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto">
-                    <QrCode className="w-6 h-6" />
+                <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                      <Smartphone className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <span className="text-xs font-bold text-white block">Enter Virtual Payment Address (VPA / UPI ID)</span>
+                      <span className="text-[11px] text-slate-400">Works with Google Pay, PhonePe, Paytm, BHIM, Amazon Pay</span>
+                    </div>
                   </div>
-                  <div>
-                    <span className="text-xs font-bold text-white block">Enter Virtual Payment Address (VPA / UPI ID)</span>
-                    <span className="text-[11px] text-slate-400">Works with Google Pay, PhonePe, Paytm, BHIM</span>
+
+                  <div className="space-y-2">
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={upiId}
+                        onChange={(e) => setUpiId(e.target.value)}
+                        placeholder="e.g. traveler@oksbi or 9876543210@paytm"
+                        className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-xs font-mono text-emerald-400 focus:outline-none focus:border-emerald-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const id = upiId.trim() || 'traveler@oksbi';
+                          setUpiId(id);
+                          addToast(`✅ UPI ID ${id} verified and ready for payment clearance!`, 'success');
+                        }}
+                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold text-xs rounded-xl cursor-pointer"
+                      >
+                        Verify UPI
+                      </button>
+                    </div>
+
+                    {/* Quick-Fill UPI IDs */}
+                    <div className="pt-1 space-y-1.5">
+                      <span className="text-[10px] text-slate-500 block">⚡ Quick-Fill Verified UPI Handles:</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[
+                          'traveler@oksbi',
+                          'user@okhdfcbank',
+                          '9876543210@paytm',
+                          'booking@icici'
+                        ].map((handle) => (
+                          <button
+                            key={handle}
+                            type="button"
+                            onClick={() => {
+                              setUpiId(handle);
+                              addToast(`Selected UPI ID: ${handle}`, 'info');
+                            }}
+                            className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold border transition-colors cursor-pointer ${
+                              upiId === handle
+                                ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300'
+                                : 'bg-slate-900 border-slate-700 text-slate-300 hover:text-white'
+                            }`}
+                          >
+                            ⚡ {handle}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   </div>
-                  <input
-                    type="text"
-                    value={upiId}
-                    onChange={(e) => setUpiId(e.target.value)}
-                    placeholder="user@oksbi"
-                    className="w-full max-w-sm mx-auto bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-xs font-mono text-center text-emerald-400 focus:outline-none focus:border-emerald-500"
-                  />
                 </div>
               </div>
             )}
 
             {paymentMethod === 'qr' && (
               <div className="space-y-4 pt-2">
-                <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3 text-center">
-                  <div className="w-32 h-32 bg-white p-2 rounded-2xl mx-auto flex items-center justify-center border-4 border-sky-500 shadow-xl">
-                    <div className="w-full h-full bg-slate-900 flex flex-col items-center justify-center text-white text-[10px] font-mono p-1 text-center">
-                      <QrCode className="w-12 h-12 text-sky-400 mb-1 animate-pulse" />
-                      <span>SCAN & PAY</span>
-                      <span className="text-[8px] text-emerald-400">₹{fare.finalTotal}</span>
+                <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-4 text-center">
+                  <div className="w-36 h-36 bg-white p-2 rounded-2xl mx-auto flex items-center justify-center border-4 border-sky-500 shadow-xl relative group">
+                    <div className="w-full h-full bg-slate-950 flex flex-col items-center justify-center text-white text-[10px] font-mono p-1 text-center rounded-lg border border-slate-800">
+                      <QrCode className="w-16 h-16 text-sky-400 mb-1 animate-pulse" />
+                      <span className="font-bold text-sky-300 text-[9px]">AEROWINGS SECURE QR</span>
+                      <span className="text-[10px] font-black text-emerald-400">₹{fare.finalTotal.toLocaleString()}</span>
                     </div>
                   </div>
-                  <div>
-                    <span className="text-xs font-bold text-white block">Scan AeroWings Secure QR Code</span>
-                    <span className="text-[11px] text-slate-400">Scan with any UPI App (GPay, PhonePe, Paytm, BHIM)</span>
+
+                  <div className="space-y-1">
+                    <span className="text-xs font-bold text-white block">Scan AeroWings Dynamic Payment QR Code</span>
+                    <span className="text-[11px] text-slate-400">Supports all UPI Apps: GPay, PhonePe, Paytm, BHIM, CRED</span>
                   </div>
-                  <input
-                    type="text"
-                    value={upiId}
-                    onChange={(e) => setUpiId(e.target.value)}
-                    placeholder="Enter UPI Transaction ID or VPA after scanning"
-                    className="w-full max-w-sm mx-auto bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-xs font-mono text-center text-sky-400 focus:outline-none focus:border-sky-500"
-                  />
+
+                  <div className="flex flex-col sm:flex-row items-center justify-center gap-2 max-w-md mx-auto">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const ref = `UTR-QR-${Date.now().toString().slice(-6)}`;
+                        setUpiId(ref);
+                        addToast(`✅ QR Payment Scanned & Received: ${ref}. Ready to authorize!`, 'success');
+                      }}
+                      className="w-full sm:w-auto px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-slate-950 font-black text-xs rounded-xl shadow-md cursor-pointer"
+                    >
+                      ⚡ Auto-Confirm / Simulate QR Scan
+                    </button>
+                  </div>
+
+                  {upiId && upiId.startsWith('UTR-QR') && (
+                    <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-mono font-bold">
+                      ✅ Scanned Transaction ID: {upiId} (Pre-Approved)
+                    </div>
+                  )}
                 </div>
               </div>
             )}
 
             {paymentMethod === 'netbanking' && (
               <div className="space-y-4 pt-2">
-                <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
-                  <span className="text-xs font-bold text-white block">Popular Banking Portals:</span>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    {['HDFC Bank', 'State Bank of India', 'ICICI Bank', 'Axis Bank', 'Kotak Bank', 'Punjab National Bank'].map((b) => (
+                <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-white block">Select Your Netbanking Bank:</span>
+                    <span className="text-[10px] text-purple-300 font-mono">50+ Scheduled Commercial Banks</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {[
+                      { name: 'HDFC Bank', code: 'HDFC' },
+                      { name: 'State Bank of India', code: 'SBI' },
+                      { name: 'ICICI Bank', code: 'ICICI' },
+                      { name: 'Axis Bank', code: 'UTIB' },
+                      { name: 'Kotak Mahindra', code: 'KKBK' },
+                      { name: 'Punjab National Bank', code: 'PUNB' }
+                    ].map((b) => (
                       <button
-                        key={b}
+                        key={b.name}
                         type="button"
-                        onClick={() => setSelectedBank(b)}
-                        className={`p-2.5 rounded-xl border text-xs font-bold transition-all cursor-pointer text-center ${
-                          selectedBank === b
-                            ? 'bg-purple-600/30 border-purple-500 text-purple-200'
+                        onClick={() => {
+                          setSelectedBank(b.name);
+                          addToast(`Selected ${b.name} for Netbanking clearance`, 'info');
+                        }}
+                        className={`p-3 rounded-xl border text-xs font-bold transition-all cursor-pointer text-left flex items-center justify-between ${
+                          selectedBank === b.name
+                            ? 'bg-purple-600/30 border-purple-400 text-white shadow-sm ring-1 ring-purple-400'
                             : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700'
                         }`}
                       >
-                        {b}
+                        <span className="truncate">{b.name}</span>
+                        {selectedBank === b.name && <Check className="w-3.5 h-3.5 text-purple-300 shrink-0" />}
                       </button>
                     ))}
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2">
+                      <Building2 className="w-4 h-4 text-purple-400" />
+                      <span className="text-slate-300">Clearing Bank: <strong className="text-white">{selectedBank}</strong></span>
+                    </div>
+                    <span className="text-emerald-400 font-bold text-[10px] flex items-center gap-1">
+                      <Check className="w-3 h-3" /> Gateway Active
+                    </span>
                   </div>
                 </div>
               </div>
             )}
 
             {paymentMethod === 'wallet' && (
-              <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
-                <div className="flex items-center justify-between text-xs">
+              <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+                <div className="flex items-center justify-between text-xs flex-wrap gap-2">
                   <span className="text-slate-300">SkyWings Frequent Flyer Cash Balance:</span>
-                  <span className="font-mono font-bold text-amber-400">
-                    {userProfile.miles} Miles (Value: {formatCurrency(userProfile.miles * 0.5, currency)})
+                  <span className="font-mono font-bold text-amber-400 text-sm">
+                    {userProfile.miles.toLocaleString()} Miles (Value: {formatCurrency(userProfile.miles * 0.5, currency)})
                   </span>
                 </div>
-                <p className="text-[11px] text-slate-500">
-                  Your wallet points will be automatically applied to waive ticket cost.
+
+                <p className="text-[11px] text-slate-400">
+                  Your frequent flyer wallet points are automatically deducted to cover 100% of the ticket fare.
                 </p>
+
+                <div className="flex items-center justify-between pt-2 border-t border-slate-800/80 flex-wrap gap-2">
+                  <span className="text-[11px] text-emerald-400 font-bold">
+                    Fare to be debited: {formatCurrency(fare.finalTotal, currency)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const additional = 100000;
+                      updateUserProfile({ miles: userProfile.miles + additional });
+                      addToast(`⚡ Credited +${additional.toLocaleString()} miles (+₹50,000) to your SkyWings Wallet!`, 'success');
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 font-bold text-xs cursor-pointer transition-colors"
+                  >
+                    ⚡ Instant Top-Up (+₹50,000 Credit)
+                  </button>
+                </div>
               </div>
             )}
           </div>

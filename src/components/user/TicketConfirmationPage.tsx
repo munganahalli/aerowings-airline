@@ -224,16 +224,32 @@ export const TicketConfirmationPage: React.FC = () => {
   };
 
   const originUrl = typeof window !== 'undefined' ? window.location.origin : 'https://aerowings.airline.com';
-  const qrVerificationUrl = `${originUrl}/?verifyPnr=${encodeURIComponent(booking.pnr)}&pax=${encodeURIComponent(paxFullName)}&flight=${encodeURIComponent(`${flight.airlineCode || 'AW'}-${flight.flightNumber}`)}&from=${encodeURIComponent(flight.origin.code)}&fromCity=${encodeURIComponent(flight.origin.city)}&to=${encodeURIComponent(flight.destination.code)}&toCity=${encodeURIComponent(flight.destination.city)}&date=${encodeURIComponent(booking.departureDate)}&time=${encodeURIComponent(flight.departureTime)}&seat=${encodeURIComponent(assignedSeat)}&gate=${encodeURIComponent(flight.gate || '22A')}&class=${encodeURIComponent(booking.cabinClass.toUpperCase())}&status=${encodeURIComponent(effectiveStatus)}&paid=${encodeURIComponent(String(booking.priceBreakdown.finalTotal))}`;
+  const paxManifestParam = encodeURIComponent(
+    JSON.stringify(
+      booking.passengers.map((p, i) => ({
+        index: i + 1,
+        title: p.title || 'Mr',
+        firstName: p.firstName,
+        lastName: p.lastName,
+        seatNumber: p.seatNumber || `${12 + i}${['A', 'B', 'C', 'D', 'E', 'F'][i % 6]}`,
+        aadhaarNumber: p.aadhaarNumber || 'Verified',
+        panNumber: p.panNumber || '',
+        visaNumber: p.visaNumber || ''
+      }))
+    )
+  );
 
+  const qrVerificationUrl = `${originUrl}/?verifyPnr=${encodeURIComponent(booking.pnr)}&pax=${encodeURIComponent(paxFullName)}&flight=${encodeURIComponent(`${flight.airlineCode || 'AW'}-${flight.flightNumber}`)}&from=${encodeURIComponent(flight.origin.code)}&fromCity=${encodeURIComponent(flight.origin.city)}&to=${encodeURIComponent(flight.destination.code)}&toCity=${encodeURIComponent(flight.destination.city)}&date=${encodeURIComponent(booking.departureDate)}&time=${encodeURIComponent(flight.departureTime)}&seat=${encodeURIComponent(assignedSeat)}&gate=${encodeURIComponent(flight.gate || '22A')}&class=${encodeURIComponent(booking.cabinClass.toUpperCase())}&status=${encodeURIComponent(effectiveStatus)}&paid=${encodeURIComponent(String(booking.priceBreakdown.finalTotal))}&paxManifest=${paxManifestParam}`;
+
+  const allPassengersManifest = booking.passengers.map((p, idx) => `[Pax ${idx + 1}: ${p.title || 'Mr'} ${p.firstName} ${p.lastName} | Seat: ${p.seatNumber || 'Auto'} | Aadhaar: ${p.aadhaarNumber || 'N/A'}]`).join('\n');
   const qrReadableText = [
-    `AEROWINGS OFFICIAL E-TICKET`,
+    `AEROWINGS OFFICIAL MASTER E-TICKET (${booking.passengers.length} TRAVELERS)`,
     `PNR: ${booking.pnr} (${effectiveStatus})`,
-    `PAX: ${paxFullName}`,
     `FLIGHT: ${flight.airlineCode || 'AW'}-${flight.flightNumber} (${flight.origin.code} -> ${flight.destination.code})`,
-    `DATE: ${booking.departureDate} | DEP: ${flight.departureTime}`,
-    `SEAT: ${assignedSeat} | GATE: ${flight.gate || '22A'} | CLASS: ${booking.cabinClass.toUpperCase()}`,
-    `PAID: INR ${booking.priceBreakdown.finalTotal.toLocaleString()}`
+    `DATE: ${booking.departureDate} | DEP: ${flight.departureTime} | GATE: ${flight.gate || '22A'} | CLASS: ${booking.cabinClass.toUpperCase()}`,
+    `PASSENGERS MANIFEST:`,
+    allPassengersManifest,
+    `TOTAL GROUP PAID: INR ${booking.priceBreakdown.finalTotal.toLocaleString()}`
   ].join('\n');
 
   const qrCodeData = qrEncodeMode === 'url' ? qrVerificationUrl : qrReadableText;
@@ -938,17 +954,17 @@ export const TicketConfirmationPage: React.FC = () => {
                 </div>
                 <div className="space-y-1.5 text-xs flex-1">
                   <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold text-[10px] border border-emerald-500/30">
-                    <ShieldCheck className="w-3 h-3" /> IATA BCBP M1 Cryptographic Signature Valid
+                    <ShieldCheck className="w-3 h-3" /> IATA BCBP M1 Cryptographic Signature Valid ({booking.passengers.length} Travelers)
                   </div>
-                  <div className="text-white font-black text-sm">{paxFullName}</div>
-                  <div className="text-slate-300 font-mono">
-                    PNR: <strong className="text-amber-400">{booking.pnr}</strong> • Ticket: {booking.ticketNumber}
-                  </div>
-                  <div className="text-slate-300">
+                  <div className="text-white font-black text-sm">Group PNR: <span className="text-amber-400">{booking.pnr}</span></div>
+                  <div className="text-slate-300 font-mono text-[11px]">
                     Flight: <strong className="text-sky-400">{flight.airlineCode || 'AW'}-{flight.flightNumber}</strong> ({flight.origin.code} ➔ {flight.destination.code})
                   </div>
-                  <div className="text-slate-400">
-                    Date: {booking.departureDate} • Dep: {flight.departureTime} • Seat: <strong className="text-white">{assignedSeat}</strong> • Gate: <strong className="text-amber-300">{flight.gate || '22A'}</strong>
+                  <div className="text-slate-300 text-[11px]">
+                    Travelers: {booking.passengers.map((p, i) => `${i+1}. ${p.title || 'Mr'} ${p.firstName} ${p.lastName} (Seat: ${p.seatNumber || 'Auto'})`).join(' • ')}
+                  </div>
+                  <div className="text-slate-400 text-[11px]">
+                    Date: {booking.departureDate} • Dep: {flight.departureTime} • Gate: <strong className="text-amber-300">{flight.gate || '22A'}</strong>
                   </div>
                   <div className={`font-bold ${isAutoCancelled ? 'text-rose-400' : 'text-emerald-400'}`}>
                     Status: {effectiveStatus}

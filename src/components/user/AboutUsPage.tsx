@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useAirline } from '../../context/AirlineContext';
 import { 
   Building2, 
@@ -10,11 +10,73 @@ import {
   Globe2, 
   ArrowRight, 
   Sparkles,
-  CheckCircle2
+  CheckCircle2,
+  Compass,
+  UtensilsCrossed,
+  Languages,
+  HeartHandshake
 } from 'lucide-react';
 
 export const AboutUsPage: React.FC = () => {
-  const { setUserView } = useAirline();
+  const { setUserView, setOrigin, setDestination, addToast } = useAirline();
+  const [selectedCorridorIndex, setSelectedCorridorIndex] = useState<number>(0);
+
+  const continentalCorridors = [
+    {
+      id: 'corridor-europe',
+      title: 'India ↔ Europe Corridor',
+      hubs: 'DEL / BOM ⇄ LHR (London), CDG (Paris), FRA (Frankfurt)',
+      originCode: 'DEL',
+      destCode: 'LHR',
+      flightTime: '8h 45m Direct',
+      aircraft: 'Airbus A350-900 & Boeing 787-9',
+      highlight: 'Connecting the financial hubs of London & Frankfurt with heartfelt Indian hospitality.',
+      culturalExperience: 'Michelin-starred European dining paired with authentic Indian Royal Awadhi Thali.',
+      languages: 'English, Hindi, French, German in-flight announcements',
+      image: 'https://images.unsplash.com/photo-1513635269975-59663e0ac1ad?auto=format&fit=crop&w=600&q=80'
+    },
+    {
+      id: 'corridor-middle-east',
+      title: 'India ↔ Middle East Gateway',
+      hubs: 'DEL / BOM / BLR ⇄ DXB (Dubai), DOH (Doha), AUH (Abu Dhabi)',
+      originCode: 'BOM',
+      destCode: 'DXB',
+      flightTime: '3h 30m Direct',
+      aircraft: 'Boeing 787-9 Dreamliner',
+      highlight: 'Bridging South Asia to the Persian Gulf with multiple daily direct luxury departures.',
+      culturalExperience: 'Arabic mezze platters, dates & cardamom coffee, and 100% Halal certified dining.',
+      languages: 'Arabic, English, Hindi, Urdu, Malayalam',
+      image: 'https://images.unsplash.com/photo-1512453979798-5ea266f8880c?auto=format&fit=crop&w=600&q=80'
+    },
+    {
+      id: 'corridor-asia',
+      title: 'India ↔ Southeast & East Asia',
+      hubs: 'DEL / BOM ⇄ SIN (Singapore), HND (Tokyo), BKK (Bangkok)',
+      originCode: 'DEL',
+      destCode: 'SIN',
+      flightTime: '5h 45m Direct',
+      aircraft: 'Airbus A350-900',
+      highlight: 'Linking vibrant cultural capitals and cutting-edge tech corridors across the Asia-Pacific.',
+      culturalExperience: 'Pan-Asian fusion cuisine, Japanese green tea service, and Singaporean street-style satays.',
+      languages: 'English, Hindi, Japanese, Mandarin, Tamil',
+      image: 'https://images.unsplash.com/photo-1525625293386-3f8f99389edd?auto=format&fit=crop&w=600&q=80'
+    },
+    {
+      id: 'corridor-americas',
+      title: 'India ↔ North America Non-Stop',
+      hubs: 'DEL / BOM ⇄ JFK (New York), SFO (San Francisco)',
+      originCode: 'DEL',
+      destCode: 'JFK',
+      flightTime: '15h 20m Ultra-Long Haul Non-Stop',
+      aircraft: 'Airbus A350-900 Ultra Long Range',
+      highlight: 'Non-stop transpolar connectivity linking Silicon Valley and Manhattan directly with India.',
+      culturalExperience: 'Four-course global culinary journey, sleep-inducing mood lighting, and mid-flight wellness snacks.',
+      languages: 'English, Hindi, Punjabi, Gujarati',
+      image: 'https://images.unsplash.com/photo-1496442226666-8d4d0e62e6e9?auto=format&fit=crop&w=600&q=80'
+    }
+  ];
+
+  const activeCorridor = continentalCorridors[selectedCorridorIndex];
 
   const fleetData = [
     {
@@ -93,6 +155,116 @@ export const AboutUsPage: React.FC = () => {
 
       {/* Main Content */}
       <div id="company-section" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-12 space-y-16">
+        
+        {/* INTERACTIVE: CONNECTING PEOPLE, CULTURES & CONTINENTS EXPLORER */}
+        <section id="connecting-cultures" className="bg-gradient-to-r from-slate-900 via-indigo-950/40 to-slate-900 border-2 border-indigo-500/40 rounded-3xl p-6 sm:p-10 shadow-2xl space-y-8">
+          <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 border-b border-indigo-500/20 pb-6">
+            <div className="max-w-2xl">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-300 text-xs font-bold uppercase tracking-wider mb-2">
+                <Globe2 className="w-3.5 h-3.5 text-sky-400" />
+                <span>Connecting People, Cultures & Continents</span>
+              </div>
+              <h2 className="text-2xl sm:text-3xl font-black text-white">
+                Global Corridors & Cultural Bridge
+              </h2>
+              <p className="text-xs sm:text-sm text-slate-300 mt-1 leading-relaxed">
+                AeroWings is more than an airline — we are a cultural ambassador linking over 92 destinations across 4 continents. Explore our flagship intercontinental corridors, specialized cultural culinary offerings, and non-stop flight paths.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {continentalCorridors.map((c, i) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => setSelectedCorridorIndex(i)}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    selectedCorridorIndex === i
+                      ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25 ring-2 ring-blue-400'
+                      : 'bg-slate-950 text-slate-300 border border-slate-800 hover:bg-slate-800'
+                  }`}
+                >
+                  {c.title}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Active Corridor Showcase */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+            <div className="lg:col-span-6 space-y-4">
+              <div className="space-y-1">
+                <span className="text-xs font-bold text-sky-400 uppercase tracking-widest font-mono">
+                  Corridor #{selectedCorridorIndex + 1} • {activeCorridor.flightTime}
+                </span>
+                <h3 className="text-xl sm:text-2xl font-black text-white">
+                  {activeCorridor.title}
+                </h3>
+                <div className="text-xs text-amber-300 font-semibold flex items-center gap-2">
+                  <Compass className="w-4 h-4 text-amber-400" />
+                  <span>{activeCorridor.hubs}</span>
+                </div>
+              </div>
+
+              <p className="text-xs sm:text-sm text-slate-300 leading-relaxed bg-slate-950 p-4 rounded-2xl border border-slate-800">
+                {activeCorridor.highlight}
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800/80 space-y-1">
+                  <div className="flex items-center gap-1.5 text-amber-300 font-bold text-xs">
+                    <UtensilsCrossed className="w-3.5 h-3.5" />
+                    <span>Cultural Dining</span>
+                  </div>
+                  <p className="text-[11px] text-slate-300">{activeCorridor.culturalExperience}</p>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800/80 space-y-1">
+                  <div className="flex items-center gap-1.5 text-sky-300 font-bold text-xs">
+                    <Languages className="w-3.5 h-3.5" />
+                    <span>Multilingual Crew</span>
+                  </div>
+                  <p className="text-[11px] text-slate-300">{activeCorridor.languages}</p>
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOrigin(activeCorridor.originCode);
+                    setDestination(activeCorridor.destCode);
+                    setUserView('home');
+                    addToast(`Route ${activeCorridor.originCode} ➔ ${activeCorridor.destCode} pre-filled! Search flights now.`, 'info');
+                  }}
+                  className="w-full sm:w-auto px-6 py-3 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-black text-xs shadow-lg flex items-center justify-center gap-2 cursor-pointer transition-all"
+                >
+                  <Plane className="w-4 h-4" />
+                  <span>Book This Continental Corridor ({activeCorridor.originCode} ✈ {activeCorridor.destCode})</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            <div className="lg:col-span-6 relative rounded-2xl overflow-hidden border border-slate-700 shadow-2xl h-80">
+              <img
+                src={activeCorridor.image}
+                alt={activeCorridor.title}
+                className="w-full h-full object-cover transition-transform duration-700 hover:scale-105"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-transparent"></div>
+              <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between text-xs text-white">
+                <span className="px-3 py-1 bg-slate-900/90 rounded-xl border border-slate-700 font-mono font-bold">
+                  Aircraft: {activeCorridor.aircraft}
+                </span>
+                <span className="px-3 py-1 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 rounded-xl font-bold">
+                  Daily Scheduled
+                </span>
+              </div>
+            </div>
+          </div>
+        </section>
+
         {/* SECTION 1: MODERN FLEET PROFILE */}
         <section id="fleet-section">
           <div className="text-center max-w-3xl mx-auto mb-10">

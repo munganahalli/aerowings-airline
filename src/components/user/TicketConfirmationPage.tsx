@@ -518,65 +518,7 @@ export const TicketConfirmationPage: React.FC = () => {
         )}
       </div>
 
-      {/* Subscribe for Secret Fares & Vacation Deals (Shown after finishing booking until subscribed or dismissed) */}
-      {!hasSubscribedSecretDeals && !dismissedSecretDeals && (
-        <div className="bg-gradient-to-r from-blue-950/70 via-indigo-950/60 to-purple-950/70 border border-blue-500/40 rounded-3xl p-5 sm:p-6 shadow-2xl relative overflow-hidden animate-fadeIn">
-          {/* Dismiss button */}
-          <button
-            type="button"
-            onClick={() => {
-              setDismissedSecretDeals(true);
-              addToast('Secret Fares banner hidden.', 'info');
-            }}
-            className="absolute top-4 right-4 p-1.5 rounded-lg bg-slate-900/60 hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
-            title="Dismiss / Don't show again"
-          >
-            <X className="w-4 h-4" />
-          </button>
 
-          <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5">
-            <div className="max-w-xl">
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/20 text-sky-300 font-extrabold text-[11px] border border-blue-500/30 uppercase tracking-wider mb-2">
-                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                <span>Member Privilege • 25% Off Secret Fares</span>
-              </div>
-              <h3 className="text-base sm:text-xl font-black text-white">
-                Subscribe for Secret Fares & Vacation Deals
-              </h3>
-              <p className="text-xs text-slate-300 mt-1">
-                Unlock exclusive unlisted airfares, zero-convenience fee promo codes, and luxury hotel discounts. Instant promo coupon <strong className="text-amber-300">SECRET25</strong> dispatched to your mobile & inbox upon subscription!
-              </p>
-            </div>
-
-            {secretSubscribedAnim ? (
-              <div className="w-full lg:w-auto p-4 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center gap-2.5 text-emerald-300 text-xs font-bold animate-fadeIn">
-                <Check className="w-5 h-5 text-emerald-400" />
-                <span>Subscribed! Secret promo code SECRET25 sent to your phone and email.</span>
-              </div>
-            ) : (
-              <form onSubmit={handleSubscribeSecretDeals} className="w-full lg:w-auto flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                <div className="relative flex-1 sm:w-72">
-                  <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  <input
-                    type="email"
-                    required
-                    value={secretEmail}
-                    onChange={(e) => setSecretEmail(e.target.value)}
-                    placeholder="Enter email for secret deals..."
-                    className="w-full pl-9 pr-3 py-2.5 bg-slate-900/90 border border-slate-700 focus:border-blue-500 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none"
-                  />
-                </div>
-                <button
-                  type="submit"
-                  className="px-5 py-2.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-sky-500 hover:from-blue-500 hover:to-sky-400 text-white text-xs font-extrabold rounded-xl shadow-lg shadow-blue-500/25 whitespace-nowrap cursor-pointer transition-all hover:scale-105"
-                >
-                  Subscribe for Secret Fares
-                </button>
-              </form>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Real-Time Route Weather Telemetry: Origin & Destination */}
       {(originWeather || destWeather) && (

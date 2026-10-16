@@ -7,12 +7,8 @@ import React, { Component, useEffect, useState, useMemo, ReactNode } from 'react
 import { LanguageProvider } from './context/LanguageContext';
 import { AirlineProvider, useAirline } from './context/AirlineContext';
 import { Navbar } from './components/common/Navbar';
-import { AIVoiceCopilotBar } from './components/common/AIVoiceCopilotBar';
-import { AIVoiceBookingWizard } from './components/common/AIVoiceBookingWizard';
-import { AIConciergeChatbot } from './components/common/AIConciergeChatbot';
 import { WebsiteFooter } from './components/common/WebsiteFooter';
 import { ToastContainer } from './components/common/ToastContainer';
-import { MobileBottomNav } from './components/common/MobileBottomNav';
 import { initializeAutoDebugger } from './utils/autoDebugger';
 import { ShieldCheck, Plane, QrCode, X, CheckCircle2 } from 'lucide-react';
 
@@ -36,8 +32,7 @@ import { AboutUsPage } from './components/user/AboutUsPage';
 import { VisaAdvisorPage } from './components/user/VisaAdvisorPage';
 import { WeatherDisruptionCenterPage } from './components/user/WeatherDisruptionCenterPage';
 
-// Admin Portal
-import { AdminPortal } from './components/admin/AdminPortal';
+
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -148,15 +143,9 @@ const MainLayout: React.FC = () => {
   }, [matchedLocalBooking, scannedTicketParams]);
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-amber-500 selection:text-slate-950 pb-20 lg:pb-0">
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-blue-600 selection:text-white">
       {/* Universal Top Navigation */}
       <Navbar />
-
-      {/* Multilingual AI Voice Copilot Bar */}
-      <AIVoiceCopilotBar />
-
-      {/* Step-by-Step Hands-Free Voice-Guided Booking Wizard */}
-      <AIVoiceBookingWizard />
 
       {/* Scanned QR Code Official E-Ticket Verification Sheet (Shown when scanning ticket QR code) */}
       {scannedTicketParams && (
@@ -308,42 +297,30 @@ const MainLayout: React.FC = () => {
 
       {/* Main Dynamic View Content */}
       <main className="flex-1">
-        {portalMode === 'admin' ? (
-          <AdminPortal />
-        ) : (
-          <>
-            {userView === 'home' && <HomePage />}
-            {userView === 'results' && <FlightResultsPage />}
-            {userView === 'passengers' && <PassengerDetailsPage />}
-            {userView === 'seats' && <SeatSelectionPage />}
-            {userView === 'addons' && <AddonsPage />}
-            {(userView === 'payment' || userView === 'passenger_payment') && <PassengerDetailsPaymentPage />}
-            {userView === 'confirmation' && <TicketConfirmationPage />}
-            {userView === 'dashboard' && <UserDashboard />}
-            {userView === 'flight_status' && <FlightStatusPage />}
-            {userView === 'experience' && <ExperiencePage />}
-            {userView === 'loyalty' && <LoyaltyClubPage />}
-            {userView === 'deals' && <DealsOffersPage />}
-            {userView === 'timetable' && <TimetablePage />}
-            {userView === 'baggage_guide' && <BaggageGuidePage />}
-            {userView === 'help' && <HelpContactPage />}
-            {userView === 'about' && <AboutUsPage />}
-            {userView === 'visa_advisor' && <VisaAdvisorPage />}
-            {userView === 'weather_ops' && <WeatherDisruptionCenterPage />}
-          </>
-        )}
+        {userView === 'home' && <HomePage />}
+        {userView === 'results' && <FlightResultsPage />}
+        {userView === 'passengers' && <PassengerDetailsPage />}
+        {userView === 'seats' && <SeatSelectionPage />}
+        {userView === 'addons' && <AddonsPage />}
+        {(userView === 'payment' || userView === 'passenger_payment') && <PassengerDetailsPaymentPage />}
+        {userView === 'confirmation' && <TicketConfirmationPage />}
+        {userView === 'dashboard' && <UserDashboard />}
+        {userView === 'flight_status' && <FlightStatusPage />}
+        {userView === 'experience' && <ExperiencePage />}
+        {userView === 'loyalty' && <LoyaltyClubPage />}
+        {userView === 'deals' && <DealsOffersPage />}
+        {userView === 'timetable' && <TimetablePage />}
+        {userView === 'baggage_guide' && <BaggageGuidePage />}
+        {userView === 'help' && <HelpContactPage />}
+        {userView === 'about' && <AboutUsPage />}
+        {userView === 'visa_advisor' && <VisaAdvisorPage />}
+        {userView === 'weather_ops' && <WeatherDisruptionCenterPage />}
       </main>
-
-      {/* SkyGuide AI Multilingual Concierge Chatbot */}
-      <AIConciergeChatbot />
 
       {/* Global Toast Notification System */}
       <ToastContainer />
 
-      {/* Persistent Mobile and Tablet Bottom Navigation */}
-      <MobileBottomNav />
-
-      {/* Premier Comprehensive Airline Website Footer */}
+      {/* Clean Modern Airline Website Footer */}
       <WebsiteFooter />
     </div>
   );

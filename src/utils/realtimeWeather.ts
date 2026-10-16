@@ -567,6 +567,39 @@ export async function fetchLiveWeatherByQuery(query: string): Promise<RealtimeAi
   const q = (query || '').trim();
   if (!q) return null;
 
+  // Direct aliases for prominent global hubs and requested Indian states
+  const HUB_QUERY_MAP: Record<string, string> = {
+    'delhi': 'DEL',
+    'mumbai': 'BOM',
+    'bengaluru (karnataka)': 'BLR',
+    'bengaluru': 'BLR',
+    'bangalore': 'BLR',
+    'karnataka': 'BLR',
+    'chennai (tamil nadu)': 'MAA',
+    'chennai': 'MAA',
+    'tamil nadu': 'MAA',
+    'srinagar (kashmir)': 'SXR',
+    'srinagar': 'SXR',
+    'kashmir': 'SXR',
+    'goa': 'GOI',
+    'kolkata (west bengal)': 'CCU',
+    'kolkata': 'CCU',
+    'west bengal': 'CCU',
+    'dubai': 'DXB',
+    'london': 'LHR',
+    'new york': 'JFK',
+    'california': 'SFO',
+    'san francisco': 'SFO',
+    'tokyo': 'HND',
+    'singapore': 'SIN',
+    'paris': 'CDG'
+  };
+
+  const normalizedKey = q.toLowerCase().trim();
+  if (HUB_QUERY_MAP[normalizedKey]) {
+    return await fetchLiveAirportWeather(HUB_QUERY_MAP[normalizedKey]);
+  }
+
   // 1. Check if matches airport code
   const upper = q.toUpperCase();
   if (AIRPORT_METEO_COORDINATES[upper]) {

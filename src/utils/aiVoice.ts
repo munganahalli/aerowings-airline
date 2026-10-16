@@ -524,13 +524,13 @@ class AIVoiceEngine {
     if (typeof window !== 'undefined') {
       try {
         const savedMute = localStorage.getItem('aerowings_ai_voice_muted');
-        this.isMutedState = savedMute === 'true';
+        this.isMutedState = savedMute !== null ? savedMute === 'true' : true;
         const savedLang = localStorage.getItem('aerowings_ai_lang') as AiLanguageCode;
         if (savedLang) {
           this.currentLanguageState = savedLang;
         }
       } catch {
-        this.isMutedState = false;
+        this.isMutedState = true;
       }
 
       if ('speechSynthesis' in window) {

@@ -72,6 +72,50 @@ export const WeatherDisruptionCenterPage: React.FC = () => {
   const [globalSearchResult, setGlobalSearchResult] = useState<RealtimeAirportWeather | null>(null);
   const [isSearchingGlobal, setIsSearchingGlobal] = useState<boolean>(false);
 
+  // AI Weather Radar & Auto-Refund State
+  const [autoRefundPnr, setAutoRefundPnr] = useState<string>('');
+  const [autoRefundResult, setAutoRefundResult] = useState<{
+    pnr: string;
+    flightNumber: string;
+    route: string;
+    amount: number;
+    utr: string;
+    timestamp: string;
+  } | null>(null);
+  const [isRefundingLive, setIsRefundingLive] = useState<boolean>(false);
+
+  const handleTriggerAutoRefundByPnr = (targetPnr?: string) => {
+    const pnrToUse = (targetPnr || autoRefundPnr).trim().toUpperCase();
+    if (!pnrToUse) {
+      addToast('Please enter or select a valid PNR to check auto-refund.', 'info');
+      return;
+    }
+    setIsRefundingLive(true);
+    setTimeout(() => {
+      const existing = bookings.find(b => b.pnr.toUpperCase() === pnrToUse);
+      const flightNum = existing?.flight?.flightNumber || 'AW-408';
+      const route = existing?.flight ? `${existing.flight.origin.code} ➔ ${existing.flight.destination.code}` : 'DEL ➔ BOM';
+      const amount = existing?.priceBreakdown?.finalTotal || 5400;
+      const utr = `AW-REF-${Math.floor(10000000 + Math.random() * 90000000)}`;
+
+      if (existing) {
+        instantWeatherRefund(existing.pnr);
+      }
+
+      setAutoRefundResult({
+        pnr: pnrToUse,
+        flightNumber: flightNum,
+        route,
+        amount,
+        utr,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      });
+      setIsRefundingLive(false);
+      addToast(`⚡ 100% Instant Auto-Refund Approved for PNR ${pnrToUse}! Transferred UTR: ${utr}`, 'success');
+      aiVoice.speak(`100 percent weather refund successfully credited for PNR ${pnrToUse}.`);
+    }, 700);
+  };
+
   const handleSearchGlobalWeather = async (queryToSearch: string) => {
     const q = (queryToSearch || globalSearchQuery).trim();
     if (!q) return;
@@ -290,6 +334,169 @@ export const WeatherDisruptionCenterPage: React.FC = () => {
           </div>
         </div>
 
+        {/* 🌩️ AI Weather Radar & Auto-Refund Console */}
+        <div id="weather-refund-console" className="bg-gradient-to-r from-slate-900 via-sky-950/40 to-slate-900 border-2 border-sky-500/40 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-sky-500/20 pb-5">
+            <div>
+              <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-sky-500/20 text-sky-300 text-xs font-black border border-sky-500/30 uppercase tracking-wider mb-2">
+                <CloudLightning className="w-3.5 h-3.5 text-amber-400" />
+                <span>🌩️ AI Weather Radar & Auto-Refund Portal</span>
+              </div>
+              <h2 className="text-xl sm:text-2xl font-black text-white">
+                Instant 100% Zero-Loss Weather Disruption Refund
+              </h2>
+              <p className="text-xs text-slate-300 mt-1 max-w-2xl leading-relaxed">
+                If your flight is grounded or cancelled due to thunderstorms, cyclones, blizzards, or zero visibility, our automated Doppler radar triggers an immediate 100% full refund with <strong className="text-emerald-400">zero cancellation fees</strong> directly to your bank account or original payment method.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-bold flex items-center gap-1.5">
+                <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                <span>100% Full Refund Guarantee</span>
+              </span>
+            </div>
+          </div>
+
+          {/* Auto-Refund PNR Input & Quick Selector */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            <div className="lg:col-span-7 space-y-4">
+              <label className="block text-xs font-bold text-white uppercase tracking-wider">
+                Enter Booking PNR to Process Instant Auto-Refund:
+              </label>
+
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Plane className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={autoRefundPnr}
+                    onChange={(e) => setAutoRefundPnr(e.target.value.toUpperCase())}
+                    placeholder="Enter PNR e.g. AW-7291 or select a flight below..."
+                    className="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-950 border border-slate-700 text-sm font-mono font-bold text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500"
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  disabled={isRefundingLive}
+                  onClick={() => handleTriggerAutoRefundByPnr()}
+                  className="px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-sky-600 hover:from-emerald-500 hover:to-sky-500 text-white font-black text-xs shadow-lg flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-50 whitespace-nowrap"
+                >
+                  {isRefundingLive ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Verifying Doppler Radar...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Zap className="w-4 h-4 text-amber-300" />
+                      <span>Execute 100% Auto-Refund</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* Quick Select from Active Bookings */}
+              <div className="space-y-2 pt-1">
+                <div className="text-[11px] text-slate-400 font-semibold">Quick Select from My Bookings or Demo PNRs:</div>
+                <div className="flex flex-wrap gap-2">
+                  {bookings.slice(0, 4).map((b) => (
+                    <button
+                      key={b.pnr}
+                      type="button"
+                      onClick={() => {
+                        setAutoRefundPnr(b.pnr);
+                        handleTriggerAutoRefundByPnr(b.pnr);
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 hover:border-sky-500 text-slate-200 text-xs font-mono font-bold cursor-pointer transition-all flex items-center gap-1.5"
+                    >
+                      <span className="text-sky-400">{b.pnr}</span>
+                      <span className="text-[10px] text-slate-400 font-sans">({b.flight.origin.code}➔{b.flight.destination.code})</span>
+                    </button>
+                  ))}
+
+                  {/* Fallback demo PNRs if user has no bookings */}
+                  {['AW-302', 'AW-201', 'AW-451'].map((code) => (
+                    <button
+                      key={code}
+                      type="button"
+                      onClick={() => {
+                        setAutoRefundPnr(code);
+                        handleTriggerAutoRefundByPnr(code);
+                      }}
+                      className="px-2.5 py-1.5 rounded-xl bg-slate-950 border border-slate-800 hover:border-emerald-500 text-slate-300 text-xs font-mono cursor-pointer transition-all"
+                    >
+                      Demo PNR: <strong className="text-emerald-400">{code}</strong>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Live Auto-Refund Result Receipt */}
+            <div className="lg:col-span-5 bg-slate-950 border border-slate-800 rounded-2xl p-5 space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <DollarSign className="w-4 h-4 text-emerald-400" />
+                  <span>Auto-Refund Settlement Status</span>
+                </div>
+                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                  autoRefundResult ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'
+                }`}>
+                  {autoRefundResult ? 'CREDITED TO BANK' : 'Awaiting PNR'}
+                </span>
+              </div>
+
+              {autoRefundResult ? (
+                <div className="space-y-3 animate-fadeIn text-xs">
+                  <div className="p-3 rounded-xl bg-emerald-950/30 border border-emerald-500/30 space-y-1.5 text-emerald-200">
+                    <div className="flex justify-between font-mono">
+                      <span>Booking PNR:</span>
+                      <strong className="text-white">{autoRefundResult.pnr}</strong>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Flight Route:</span>
+                      <strong className="text-white">{autoRefundResult.flightNumber} ({autoRefundResult.route})</strong>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>100% Refund Amount:</span>
+                      <strong className="text-emerald-400 text-sm font-extrabold">{formatCurrency(autoRefundResult.amount, currency)}</strong>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Cancellation Fee:</span>
+                      <span className="text-white line-through">₹2,500</span> <strong className="text-emerald-400">₹0 (Waived)</strong>
+                    </div>
+                    <div className="flex justify-between border-t border-emerald-500/20 pt-1.5">
+                      <span>Bank UTR Ref:</span>
+                      <span className="font-mono text-sky-300 font-bold">{autoRefundResult.utr}</span>
+                    </div>
+                    <div className="flex justify-between text-[11px] text-slate-400">
+                      <span>Credited At:</span>
+                      <span>{autoRefundResult.timestamp}</span>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      addToast(`📥 Downloaded Official Auto-Refund Receipt for PNR ${autoRefundResult.pnr}`, 'success');
+                    }}
+                    className="w-full py-2 rounded-xl bg-slate-900 border border-slate-700 hover:bg-slate-800 text-slate-200 font-bold text-xs cursor-pointer transition-colors text-center"
+                  >
+                    Download Settlement Receipt (PDF)
+                  </button>
+                </div>
+              ) : (
+                <div className="py-6 text-center space-y-2 text-slate-400 text-xs">
+                  <CheckCircle2 className="w-8 h-8 text-slate-600 mx-auto" />
+                  <p>Enter any flight PNR above to preview zero-fee weather cancellation and disburse 100% automatic refund instantly.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
         {/* Global Real-Time Weather Explorer (All States & Countries Worldwide) */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-5">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-4">
@@ -344,41 +551,75 @@ export const WeatherDisruptionCenterPage: React.FC = () => {
               </button>
             </form>
 
-            {/* Quick Location Pills */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
-              <span className="text-slate-500 text-[11px] font-semibold shrink-0">Quick States & Hubs:</span>
-              {[
-                { label: '🇮🇳 Delhi', q: 'Delhi' },
-                { label: '🇮🇳 Mumbai', q: 'Mumbai' },
-                { label: '🇮🇳 Bengaluru (Karnataka)', q: 'Bengaluru' },
-                { label: '🇮🇳 Chennai (Tamil Nadu)', q: 'Chennai' },
-                { label: '🇮🇳 Srinagar (Kashmir)', q: 'Srinagar' },
-                { label: '🇮🇳 Goa', q: 'Goa' },
-                { label: '🇮🇳 Kolkata (West Bengal)', q: 'Kolkata' },
-                { label: '🇦🇪 Dubai', q: 'Dubai' },
-                { label: '🇬🇧 London', q: 'London' },
-                { label: '🇺🇸 New York', q: 'New York' },
-                { label: '🇺🇸 California', q: 'San Francisco' },
-                { label: '🇯🇵 Tokyo', q: 'Tokyo' },
-                { label: '🇸🇬 Singapore', q: 'Singapore' },
-                { label: '🇫🇷 Paris', q: 'Paris' }
-              ].map((loc) => (
-                <button
-                  key={loc.q}
-                  type="button"
-                  onClick={() => {
-                    setGlobalSearchQuery(loc.q);
-                    handleSearchGlobalWeather(loc.q);
-                  }}
-                  className={`px-2.5 py-1 rounded-lg text-[11px] font-medium whitespace-nowrap transition-colors cursor-pointer ${
-                    globalSearchQuery.toLowerCase() === loc.q.toLowerCase()
-                      ? 'bg-blue-600 text-white font-bold shadow-sm'
-                      : 'bg-slate-950 border border-slate-800 text-slate-300 hover:bg-slate-800'
-                  }`}
-                >
-                  {loc.label}
-                </button>
-              ))}
+            {/* Quick States & Hubs rendered one by one */}
+            <div className="space-y-3 pt-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-sky-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <Compass className="w-4 h-4" />
+                  <span>Quick States & Hubs (Select One by One for Real-Time Radar & Disruption Telemetry):</span>
+                </span>
+                <span className="text-[11px] text-slate-400">14 Verified Corridors</span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                {[
+                  { label: '🇮🇳 Delhi', q: 'Delhi', desc: 'Indira Gandhi International Hub (DEL)' },
+                  { label: '🇮🇳 Mumbai', q: 'Mumbai', desc: 'Chhatrapati Shivaji Maharaj Hub (BOM)' },
+                  { label: '🇮🇳 Bengaluru (Karnataka)', q: 'Bengaluru (Karnataka)', desc: 'Kempegowda International Hub (BLR)' },
+                  { label: '🇮🇳 Chennai (Tamil Nadu)', q: 'Chennai (Tamil Nadu)', desc: 'Chennai International Hub (MAA)' },
+                  { label: '🇮🇳 Srinagar (Kashmir)', q: 'Srinagar (Kashmir)', desc: 'Sheikh ul-Alam International Hub (SXR)' },
+                  { label: '🇮🇳 Goa', q: 'Goa', desc: 'Dabolim / Manohar International Hub (GOI)' },
+                  { label: '🇮🇳 Kolkata (West Bengal)', q: 'Kolkata (West Bengal)', desc: 'Netaji Subhash Chandra Bose Hub (CCU)' },
+                  { label: '🇦🇪 Dubai', q: 'Dubai', desc: 'Dubai International Hub (DXB)' },
+                  { label: '🇬🇧 London', q: 'London', desc: 'London Heathrow Gateway (LHR)' },
+                  { label: '🇺🇸 New York', q: 'New York', desc: 'John F. Kennedy Gateway (JFK)' },
+                  { label: '🇺🇸 California', q: 'California', desc: 'San Francisco Bay Area Corridor (SFO)' },
+                  { label: '🇯🇵 Tokyo', q: 'Tokyo', desc: 'Tokyo Haneda International Hub (HND)' },
+                  { label: '🇸🇬 Singapore', q: 'Singapore', desc: 'Singapore Changi Gateway (SIN)' },
+                  { label: '🇫🇷 Paris', q: 'Paris', desc: 'Paris Charles de Gaulle Gateway (CDG)' }
+                ].map((loc, idx) => {
+                  const isSelected = globalSearchQuery.toLowerCase() === loc.q.toLowerCase() || 
+                    (globalSearchResult?.cityName && globalSearchResult.cityName.toLowerCase().includes(loc.q.toLowerCase().split(' ')[0]));
+
+                  return (
+                    <button
+                      key={loc.q}
+                      id={`hub-one-by-one-${idx}`}
+                      type="button"
+                      onClick={() => {
+                        setGlobalSearchQuery(loc.q);
+                        handleSearchGlobalWeather(loc.q);
+                      }}
+                      className={`w-full p-3 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between gap-3 ${
+                        isSelected
+                          ? 'bg-blue-600/20 border-blue-500 text-white shadow-md shadow-blue-500/10'
+                          : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700 hover:bg-slate-900/80'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span className="w-6 h-6 rounded-lg bg-slate-800 text-slate-300 flex items-center justify-center text-[10px] font-mono font-bold shrink-0">
+                          {idx + 1}
+                        </span>
+                        <div className="min-w-0">
+                          <div className="font-bold text-xs truncate flex items-center gap-1.5">
+                            <span>{loc.label}</span>
+                            {isSelected && (
+                              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-slate-400 truncate">{loc.desc}</div>
+                        </div>
+                      </div>
+
+                      <span className={`text-[11px] font-bold px-2 py-1 rounded-lg shrink-0 whitespace-nowrap transition-colors ${
+                        isSelected ? 'bg-blue-600 text-white' : 'bg-slate-900 text-sky-400 hover:text-white'
+                      }`}>
+                        {isSelected ? 'Live Active' : 'Inspect'}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
 

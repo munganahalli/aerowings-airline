@@ -261,37 +261,13 @@ export const FlightResultsPage: React.FC = () => {
 
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setUserView('visa_advisor')}
-            className="px-3.5 py-2 bg-emerald-950/40 hover:bg-emerald-900/40 text-emerald-400 text-xs font-semibold rounded-xl border border-emerald-500/30 transition-colors flex items-center gap-1.5 cursor-pointer"
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Verify Visa Rules</span>
-          </button>
-
-          <button
-            onClick={() => setUserView('weather_ops')}
-            className="px-3.5 py-2 bg-sky-950/40 hover:bg-sky-900/40 text-sky-400 text-xs font-semibold rounded-xl border border-sky-500/30 transition-colors flex items-center gap-1.5 cursor-pointer"
-          >
-            <Zap className="w-3.5 h-3.5" />
-            <span>AI Weather Radar</span>
-          </button>
-
-          <button
             onClick={() => setUserView('home')}
-            className="px-4 py-2 bg-slate-800 hover:bg-slate-750 text-slate-200 text-xs font-semibold rounded-xl border border-slate-700 transition-colors cursor-pointer"
+            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-xl border border-slate-750 transition-colors cursor-pointer"
           >
-            {t('common.modifySearch')}
+            {t('common.modifySearch', 'Modify Search')}
           </button>
         </div>
       </div>
-
-      {/* Real-time Route Weather Bar */}
-      <RealtimeAirportWeatherWidget
-        originCode={searchParams.origin}
-        destinationCode={searchParams.destination}
-        showBoth={true}
-        onNavigateToWeatherRadar={() => setUserView('weather_ops')}
-      />
 
       {/* Live Special Concession Fares Bar */}
       <div className="bg-slate-900 border border-amber-500/30 rounded-2xl p-3.5 sm:p-4 shadow-lg space-y-2.5">
@@ -716,11 +692,11 @@ export const FlightResultsPage: React.FC = () => {
           {/* Results Count Summary */}
           <div className="text-xs text-slate-400 px-1 flex flex-wrap items-center justify-between gap-2">
             <span>
-              Found <span className="font-bold text-emerald-400">{directAvailableFlights.length}</span> direct flight(s) and <span className="font-bold text-sky-400">{otherAvailableFlights.length}</span> network flight(s)
+              Showing <span className="font-semibold text-slate-200">{directAvailableFlights.length}</span> direct flight(s) and <span className="font-semibold text-slate-200">{otherAvailableFlights.length}</span> network flight(s)
             </span>
-            <span className="text-emerald-400 font-medium flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-              <span>Real-time Seat & Flight Status Verified</span>
+            <span className="text-slate-400 text-[11px] font-medium flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-500" />
+              <span>Real-time Flight Status Confirmed</span>
             </span>
           </div>
 

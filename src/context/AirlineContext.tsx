@@ -651,21 +651,7 @@ export const AirlineProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
     }
 
-    // Announce search via AI Voice Copilot
-    const matching = currentFlightList.filter(f => {
-      const matchOrigin = !params.origin || f.origin.code === params.origin;
-      const matchDest = !params.destination || f.destination.code === params.destination;
-      return matchOrigin && matchDest;
-    });
-
-    const sampleWeather = matching[0]?.weather?.condition ? `${matching[0].weather.condition}, ${matching[0].weather.temperatureC}°C` : 'Clear and safe';
-    aiVoice.announceSearch(
-      params.origin || 'Selected Origin',
-      params.destination || 'Destination',
-      matching.length || currentFlightList.length,
-      sampleWeather,
-      aiLanguage
-    );
+    // Search completed
   };
 
   // Passenger Updates

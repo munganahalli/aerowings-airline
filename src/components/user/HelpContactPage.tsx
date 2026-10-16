@@ -13,11 +13,19 @@ import {
   CheckCircle2, 
   ShieldCheck, 
   Sparkles,
-  Bot
+  Bot,
+  Video,
+  Mic,
+  Headphones,
+  UserCheck,
+  RefreshCw,
+  X,
+  Volume2
 } from 'lucide-react';
+import { aiVoice } from '../../utils/aiVoice';
 
 export const HelpContactPage: React.FC = () => {
-  const { showToast } = useAirline();
+  const { showToast, addToast, setUserView, bookings } = useAirline();
   const [searchQuery, setSearchQuery] = useState('');
   const [openFaq, setOpenFaq] = useState<number | null>(0);
 
@@ -29,10 +37,17 @@ export const HelpContactPage: React.FC = () => {
   const [inquiryMessage, setInquiryMessage] = useState('');
   const [ticketRef, setTicketRef] = useState<string | null>(null);
 
-  // Chat Simulator State
-  const [chatOpen, setChatOpen] = useState(false);
+  // Virtual Desk State
+  const [chatOpen, setChatOpen] = useState(true);
+  const [isTyping, setIsTyping] = useState(false);
+  const [showVideoCallModal, setShowVideoCallModal] = useState(false);
+  const [callConnected, setCallConnected] = useState(false);
   const [chatMessages, setChatMessages] = useState<Array<{ sender: 'bot' | 'user'; text: string; time: string }>>([
-    { sender: 'bot', text: 'Hello! I am AeroBot, your 24/7 virtual flight assistant. How may I help you with your booking, baggage, or web check-in today?', time: 'Just now' }
+    { 
+      sender: 'bot', 
+      text: 'Welcome to the AeroWings Virtual Desk! I am Duty Officer Rajesh (Counter #3). I can check your booking PNR, process instant weather cancellation refunds, or assist with baggage and seat upgrades. How may I assist you today?', 
+      time: 'Just now' 
+    }
   ]);
   const [chatInput, setChatInput] = useState('');
 
@@ -79,31 +94,49 @@ export const HelpContactPage: React.FC = () => {
     showToast(`Support Ticket ${refId} created! Our team will reply within 2 hours.`, 'success');
   };
 
-  const handleSendChat = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!chatInput.trim()) return;
+  const handleSendChat = (e?: React.FormEvent, customMsg?: string) => {
+    if (e) e.preventDefault();
+    const userText = (customMsg || chatInput).trim();
+    if (!userText) return;
 
-    const userText = chatInput;
     const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    
     setChatMessages(prev => [...prev, { sender: 'user', text: userText, time: now }]);
     setChatInput('');
+    setIsTyping(true);
 
     setTimeout(() => {
-      let botReply = "Thank you for reaching out. Our team is available 24/7 to assist with your journey. You can also view real-time flight telemetry or check in under 'My Trips'!";
+      let botReply = "Thank you for contacting the AeroWings Virtual Desk. I have recorded your inquiry. Is there anything else regarding your flight, baggage, or itinerary I can assist with?";
       const lower = userText.toLowerCase();
-      if (lower.includes('baggage') || lower.includes('luggage')) {
-        botReply = "Standard Economy allows 7kg cabin + 15kg checked baggage. You can calculate excess baggage or track delayed bags in our Baggage Guide section.";
+
+      // Check for PNR pattern or 'pnr' query
+      const pnrMatch = userText.toUpperCase().match(/\b(AW-[A-Z0-9]+|[A-Z0-9]{6})\b/);
+      if (pnrMatch) {
+        const foundPnr = pnrMatch[0];
+        const matched = bookings.find(b => b.pnr.toUpperCase() === foundPnr);
+        if (matched) {
+          botReply = `✅ PNR ${foundPnr} Found! Flight ${matched.flight.flightNumber} from ${matched.flight.origin.city} (${matched.flight.origin.code}) to ${matched.flight.destination.city} (${matched.flight.destination.code}). Departure scheduled for ${matched.flight.departureTime}. Status: ${matched.status}. You can view the live boarding pass under 'My Trips'!`;
+        } else {
+          botReply = `🔍 Checking PNR ${foundPnr} in global reservation system: Booking is Active and confirmed. Baggage allowance: 15kg checked + 7kg cabin. Gate opens 45 mins before departure.`;
+        }
+      } else if (lower.includes('weather') || lower.includes('storm') || lower.includes('refund')) {
+        botReply = "🌩️ Under our AI Doppler Weather Guarantee: If severe weather grounds your flight, your ticket is cancelled automatically with a 100% full refund and zero deduction. You can check real-time radar in the Weather & Radar tab!";
+      } else if (lower.includes('baggage') || lower.includes('luggage')) {
+        botReply = "🧳 Economy allowance: 7kg cabin + 15kg checked. Business Class: 12kg cabin + 35kg checked. Extra baggage vouchers can also be claimed using SkyMiles in the SkyWings Club!";
       } else if (lower.includes('checkin') || lower.includes('check-in') || lower.includes('boarding pass')) {
-        botReply = "Web check-in opens 48 hours prior to departure. You can check in directly from 'My Bookings' to download your PDF boarding pass.";
-      } else if (lower.includes('refund') || lower.includes('cancel')) {
-        botReply = "Refunds are processed based on departure timeline. You can cancel any confirmed booking directly with one click in the User Dashboard.";
-      } else if (lower.includes('food') || lower.includes('meal')) {
-        botReply = "Complimentary hot meals and gourmet special dietary meals (Jain, Vegan, Gluten-free) can be pre-ordered during booking.";
+        botReply = "🎫 Web Check-in opens 48 hours prior to flight departure. You can check in directly from 'My Trips' to select seats and download your PDF boarding pass.";
+      } else if (lower.includes('upgrade') || lower.includes('business')) {
+        botReply = "👑 Lie-Flat Business Class upgrades can be redeemed for 7,500 SkyMiles in the SkyWings Club, or requested at the check-in desk subject to seat availability.";
+      } else if (lower.includes('medical') || lower.includes('wheelchair')) {
+        botReply = "♿ Complimentary wheelchair and airport tarmac assistance has been flagged for your reservation. Our ground crew will meet you at the departure drop-off point.";
       }
 
-      setChatMessages(prev => [...prev, { sender: 'bot', text: botReply, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }]);
-    }, 800);
+      setIsTyping(false);
+      setChatMessages(prev => [...prev, { 
+        sender: 'bot', 
+        text: botReply, 
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
+      }]);
+    }, 700);
   };
 
   return (

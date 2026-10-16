@@ -12,18 +12,61 @@ import {
   Sparkles,
   CheckCircle2,
   HelpCircle,
-  Zap
+  Zap,
+  QrCode,
+  Copy,
+  Check,
+  Ticket,
+  Star,
+  X
 } from 'lucide-react';
 import { AIRPORTS } from '../../data/mockData';
 
+interface ClaimedVoucher {
+  id: string;
+  title: string;
+  cost: number;
+  code: string;
+  redeemedAt: string;
+  status: 'Active' | 'Used';
+}
+
 export const LoyaltyClubPage: React.FC = () => {
-  const { userProfile, setUserView, showToast } = useAirline();
+  const { userProfile, updateUserProfile, setUserView, addToast, setOrigin, setDestination } = useAirline();
   
   // Miles Calculator State
   const [calcOrigin, setCalcOrigin] = useState('DEL');
   const [calcDestination, setCalcDestination] = useState('LHR');
   const [calcClass, setCalcClass] = useState<'economy' | 'premium_economy' | 'business' | 'first'>('business');
-  
+
+  // Claimed Vouchers Inventory State
+  const [claimedVouchers, setClaimedVouchers] = useState<ClaimedVoucher[]>(() => {
+    try {
+      const saved = localStorage.getItem('aerowings_claimed_vouchers');
+      if (saved) return JSON.parse(saved);
+    } catch {
+      // fallback
+    }
+    return [
+      {
+        id: 'vch-init-1',
+        title: 'Priority Lounge Pass (DEL & BOM)',
+        cost: 3000,
+        code: 'SKYW-LNG-9481',
+        redeemedAt: 'Oct 14, 2026',
+        status: 'Active'
+      }
+    ];
+  });
+
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const [showLoungePassModal, setShowLoungePassModal] = useState<boolean>(false);
+
+  // Dynamic Tier calculations
+  const tierTarget = userProfile.tier === 'Platinum' ? 25000 : userProfile.tier === 'Gold' ? 10000 : 3000;
+  const milesToGo = Math.max(0, tierTarget - userProfile.miles);
+  const progressPercent = Math.min(100, Math.round((userProfile.miles / tierTarget) * 100));
+
   // Tier calculator calculation
   const calculateMiles = () => {
     let baseMiles = 4200; // estimated distance DEL to LHR
@@ -47,12 +90,59 @@ export const LoyaltyClubPage: React.FC = () => {
 
   const { earned, tierPoints } = calculateMiles();
 
+  // Real interactive reward claim with miles deduction & voucher issuance
   const handleClaimReward = (title: string, cost: number) => {
     if (userProfile.miles < cost) {
-      showToast(`You need ${cost - userProfile.miles} more miles to redeem ${title}`, 'info');
-    } else {
-      showToast(`Successfully redeemed voucher for ${title}! Check your email.`, 'success');
+      addToast(`Insufficient SkyMiles: You need ${cost - userProfile.miles} more miles to redeem ${title}`, 'error');
+      return;
     }
+
+    const code = `SKYW-${title.slice(0, 3).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const newVoucher: ClaimedVoucher = {
+      id: `vch-${Date.now()}`,
+      title,
+      cost,
+      code,
+      redeemedAt: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+      status: 'Active'
+    };
+
+    const updatedMiles = Math.max(0, userProfile.miles - cost);
+    updateUserProfile({ miles: updatedMiles });
+
+    const updatedList = [newVoucher, ...claimedVouchers];
+    setClaimedVouchers(updatedList);
+    try {
+      localStorage.setItem('aerowings_claimed_vouchers', JSON.stringify(updatedList));
+    } catch {
+      // ignore
+    }
+
+    addToast(`🎉 Successfully redeemed ${title}! Voucher Code: ${code} has been added to your inventory.`, 'success');
+  };
+
+  const handleTestEarnMiles = (points = 2500) => {
+    const newMiles = userProfile.miles + points;
+    let newTier = userProfile.tier;
+    if (newMiles >= 10000) newTier = 'Platinum';
+    else if (newMiles >= 3000) newTier = 'Gold';
+    else newTier = 'Silver';
+
+    updateUserProfile({ miles: newMiles, tier: newTier });
+    addToast(`✨ Added +${points.toLocaleString()} SkyMiles! Balance: ${newMiles.toLocaleString()} pts (${newTier} Member)`, 'success');
+  };
+
+  const handleSwitchTier = (tier: 'Silver' | 'Gold' | 'Platinum') => {
+    const targetMiles = tier === 'Platinum' ? 12500 : tier === 'Gold' ? 5200 : 1500;
+    updateUserProfile({ tier, miles: targetMiles });
+    addToast(`👑 Switched to ${tier} Member Privileges! Active benefits unlocked.`, 'info');
+  };
+
+  const handleCopyCode = (code: string) => {
+    navigator.clipboard?.writeText(code);
+    setCopiedCode(code);
+    addToast(`Copied voucher code ${code} to clipboard!`, 'success');
+    setTimeout(() => setCopiedCode(null), 2000);
   };
 
   return (
@@ -78,7 +168,7 @@ export const LoyaltyClubPage: React.FC = () => {
                 <div className="text-xs text-slate-400">Welcome Back,</div>
                 <div className="text-lg font-bold text-white">{userProfile.name}</div>
               </div>
-              <div className="text-right">
+              <div className="flex items-center gap-2">
                 <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs font-bold rounded-full">
                   <Crown className="w-3.5 h-3.5" />
                   <span>{userProfile.tier} Member</span>
@@ -94,22 +184,48 @@ export const LoyaltyClubPage: React.FC = () => {
                 </div>
               </div>
               <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800">
-                <div className="text-xs text-slate-400">Next Tier (Platinum)</div>
+                <div className="text-xs text-slate-400">
+                  {userProfile.tier === 'Platinum' ? 'Elite Milestone' : `Next Tier (${userProfile.tier === 'Silver' ? 'Gold' : 'Platinum'})`}
+                </div>
                 <div className="text-2xl font-extrabold text-amber-300 mt-0.5">
-                  1,550 <span className="text-xs font-normal text-slate-400">miles to go</span>
+                  {milesToGo.toLocaleString()} <span className="text-xs font-normal text-slate-400">miles to go</span>
                 </div>
               </div>
             </div>
 
-            {/* Progress bar to Platinum */}
+            {/* Dynamic Progress bar */}
             <div>
               <div className="flex justify-between text-xs text-slate-400 mb-1.5">
-                <span>Gold Tier</span>
-                <span>Platinum Tier (10,000 pts)</span>
+                <span>{userProfile.tier} Status</span>
+                <span>{tierTarget.toLocaleString()} pts Milestone ({progressPercent}%)</span>
               </div>
               <div className="w-full h-2.5 bg-slate-800 rounded-full overflow-hidden">
-                <div className="h-full bg-gradient-to-r from-amber-500 to-amber-300 w-[84%] rounded-full transition-all"></div>
+                <div 
+                  className="h-full bg-gradient-to-r from-amber-500 to-amber-300 rounded-full transition-all duration-500"
+                  style={{ width: `${progressPercent}%` }}
+                ></div>
               </div>
+            </div>
+
+            {/* Interactive Member Action Toolbar */}
+            <div className="grid grid-cols-2 gap-2 mt-5 pt-4 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => handleTestEarnMiles(2500)}
+                className="py-2 px-3 rounded-xl bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 shadow-md cursor-pointer transition-all"
+              >
+                <Zap className="w-3.5 h-3.5" />
+                <span>+2,500 Test Miles</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowLoungePassModal(true)}
+                className="py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-750 border border-slate-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-all"
+              >
+                <QrCode className="w-3.5 h-3.5 text-sky-400" />
+                <span>Digital Lounge Pass</span>
+              </button>
             </div>
           </div>
         </div>
@@ -213,7 +329,12 @@ export const LoyaltyClubPage: React.FC = () => {
               </div>
 
               <button
-                onClick={() => setUserView('home')}
+                onClick={() => {
+                  setOrigin(calcOrigin);
+                  setDestination(calcDestination);
+                  setUserView('home');
+                  addToast(`Route ${calcOrigin} ➔ ${calcDestination} selected for flight booking!`, 'info');
+                }}
                 className="mt-6 w-full py-3 bg-blue-600 hover:bg-blue-500 text-white text-xs sm:text-sm font-bold rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg shadow-blue-600/30"
               >
                 <span>Book This Route & Earn Miles</span>
@@ -234,7 +355,9 @@ export const LoyaltyClubPage: React.FC = () => {
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {/* Silver Tier */}
-            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 flex flex-col justify-between">
+            <div className={`bg-slate-900 rounded-3xl p-6 flex flex-col justify-between border transition-all ${
+              userProfile.tier === 'Silver' ? 'border-sky-500 shadow-xl shadow-sky-500/10' : 'border-slate-800'
+            }`}>
               <div>
                 <div className="flex items-center justify-between mb-4">
                   <span className="px-3 py-1 bg-slate-800 text-slate-200 text-xs font-bold rounded-full">
@@ -262,13 +385,28 @@ export const LoyaltyClubPage: React.FC = () => {
                   </li>
                 </ul>
               </div>
-              <div className="text-xs text-slate-400 pt-4 border-t border-slate-800">
-                Qualify with 0 – 3,000 Tier Miles
+              <div className="pt-4 border-t border-slate-800 space-y-3">
+                <div className="text-xs text-slate-400">
+                  Qualify with 0 – 3,000 Tier Miles
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleSwitchTier('Silver')}
+                  className={`w-full py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    userProfile.tier === 'Silver'
+                      ? 'bg-sky-600 text-white cursor-default'
+                      : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                  }`}
+                >
+                  {userProfile.tier === 'Silver' ? '✓ Currently Active Tier' : 'Switch to Silver Tier'}
+                </button>
               </div>
             </div>
 
             {/* Gold Tier */}
-            <div className="bg-slate-900 border-2 border-amber-500/50 rounded-3xl p-6 flex flex-col justify-between relative shadow-xl shadow-amber-500/5">
+            <div className={`bg-slate-900 rounded-3xl p-6 flex flex-col justify-between relative border-2 transition-all ${
+              userProfile.tier === 'Gold' ? 'border-amber-400 shadow-xl shadow-amber-500/20' : 'border-amber-500/50'
+            }`}>
               <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-amber-500 text-slate-950 text-[10px] font-extrabold px-3 py-0.5 rounded-full uppercase tracking-wider">
                 Most Popular
               </span>
@@ -303,13 +441,28 @@ export const LoyaltyClubPage: React.FC = () => {
                   </li>
                 </ul>
               </div>
-              <div className="text-xs text-amber-300/80 pt-4 border-t border-slate-800">
-                Qualify with 3,000 – 10,000 Tier Miles
+              <div className="pt-4 border-t border-slate-800 space-y-3">
+                <div className="text-xs text-amber-300/80">
+                  Qualify with 3,000 – 10,000 Tier Miles
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleSwitchTier('Gold')}
+                  className={`w-full py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    userProfile.tier === 'Gold'
+                      ? 'bg-amber-500 text-slate-950 font-black cursor-default'
+                      : 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40'
+                  }`}
+                >
+                  {userProfile.tier === 'Gold' ? '✓ Currently Active Tier' : 'Switch to Gold Tier'}
+                </button>
               </div>
             </div>
 
             {/* Platinum Tier */}
-            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 flex flex-col justify-between">
+            <div className={`bg-slate-900 rounded-3xl p-6 flex flex-col justify-between border transition-all ${
+              userProfile.tier === 'Platinum' ? 'border-purple-400 shadow-xl shadow-purple-500/20' : 'border-slate-800'
+            }`}>
               <div>
                 <div className="flex items-center justify-between mb-4">
                   <span className="px-3 py-1 bg-purple-500/20 text-purple-300 text-xs font-bold rounded-full border border-purple-500/40">
@@ -341,8 +494,21 @@ export const LoyaltyClubPage: React.FC = () => {
                   </li>
                 </ul>
               </div>
-              <div className="text-xs text-purple-300/80 pt-4 border-t border-slate-800">
-                Qualify with 10,000+ Tier Miles
+              <div className="pt-4 border-t border-slate-800 space-y-3">
+                <div className="text-xs text-purple-300/80">
+                  Qualify with 10,000+ Tier Miles
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleSwitchTier('Platinum')}
+                  className={`w-full py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    userProfile.tier === 'Platinum'
+                      ? 'bg-purple-600 text-white font-black cursor-default'
+                      : 'bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40'
+                  }`}
+                >
+                  {userProfile.tier === 'Platinum' ? '✓ Currently Active Tier' : 'Switch to Platinum Tier'}
+                </button>
               </div>
             </div>
           </div>
@@ -443,7 +609,160 @@ export const LoyaltyClubPage: React.FC = () => {
             </div>
           </div>
         </section>
+
+        {/* SECTION 4: MY CLAIMED PRIVILEGES & VOUCHERS */}
+        <section className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl space-y-6">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+            <div>
+              <div className="inline-flex items-center gap-1.5 text-xs text-amber-400 font-bold uppercase tracking-wider mb-1">
+                <Ticket className="w-4 h-4" />
+                <span>My Active Privilege Inventory</span>
+              </div>
+              <h2 className="text-xl sm:text-2xl font-bold text-white">
+                Redeemed Vouchers & Passcodes ({claimedVouchers.length})
+              </h2>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Copy your unique voucher codes to apply complimentary upgrades, lounge access, or extra luggage during checkout.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => handleTestEarnMiles(1500)}
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-sky-400 hover:text-white rounded-xl text-xs font-bold border border-slate-700 transition-all cursor-pointer flex items-center gap-1.5"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Earn +1,500 Bonus Miles</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {claimedVouchers.map((voucher) => (
+              <div
+                key={voucher.id}
+                className="p-5 rounded-2xl bg-slate-950 border border-slate-800 space-y-3 relative overflow-hidden"
+              >
+                <div className="flex items-start justify-between">
+                  <div className="space-y-1">
+                    <span className="text-[10px] uppercase font-mono font-bold text-slate-400">
+                      Redeemed {voucher.redeemedAt}
+                    </span>
+                    <h3 className="font-bold text-white text-sm">{voucher.title}</h3>
+                  </div>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                    {voucher.status}
+                  </span>
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between font-mono">
+                  <span className="text-amber-300 font-bold text-xs">{voucher.code}</span>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyCode(voucher.code)}
+                    className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer flex items-center gap-1 text-[10px] font-sans font-semibold"
+                  >
+                    {copiedCode === voucher.code ? (
+                      <>
+                        <Check className="w-3 h-3 text-emerald-400" />
+                        <span className="text-emerald-400">Copied</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3 h-3" />
+                        <span>Copy Code</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1">
+                  <span>Value: {voucher.cost.toLocaleString()} SkyMiles</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUserView('home');
+                      addToast(`Promo code ${voucher.code} copied! Ready to apply during seat selection or booking.`, 'success');
+                    }}
+                    className="text-sky-400 hover:text-sky-300 font-bold cursor-pointer"
+                  >
+                    Apply to Flight →
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
       </div>
+
+      {/* Digital Executive Lounge Pass Modal */}
+      {showLoungePassModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-gradient-to-b from-slate-900 to-slate-950 border border-amber-500/40 rounded-3xl max-w-md w-full p-6 shadow-2xl relative space-y-5">
+            <button
+              type="button"
+              onClick={() => setShowLoungePassModal(false)}
+              className="absolute top-4 right-4 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-300">
+                <Crown className="w-6 h-6" />
+              </div>
+              <div>
+                <div className="text-xs font-bold text-amber-400 uppercase tracking-wider">AeroWings Global Access</div>
+                <h3 className="text-lg font-black text-white">Executive Digital Lounge Pass</h3>
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+              <div className="flex justify-between text-xs">
+                <span className="text-slate-400">Passenger / Member:</span>
+                <strong className="text-white">{userProfile.name}</strong>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-slate-400">Membership Tier:</span>
+                <span className="text-amber-300 font-bold">{userProfile.tier} Voyager</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-slate-400">Access Type:</span>
+                <span className="text-emerald-400 font-bold">Complimentary Worldwide (+1 Guest)</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-slate-400">Eligible Hubs:</span>
+                <span className="text-slate-300 font-mono text-[11px]">DEL, BOM, BLR, LHR, DXB, SIN</span>
+              </div>
+
+              {/* QR Barcode representation */}
+              <div className="pt-3 pb-1 border-t border-slate-800 text-center space-y-2">
+                <div className="inline-block p-3 rounded-2xl bg-white shadow-md">
+                  <QrCode className="w-32 h-32 text-slate-950 mx-auto" />
+                </div>
+                <div className="font-mono text-xs text-amber-400 font-bold tracking-widest">
+                  AW-LNG-VIP-{userProfile.tier.toUpperCase()}-2026
+                </div>
+                <p className="text-[10px] text-slate-400">
+                  Scan this pass at AeroWings Lounge Reception Concierge for immediate entry.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowLoungePassModal(false);
+                  addToast('Lounge Pass saved to your offline boarding profile!', 'success');
+                }}
+                className="w-full py-2.5 bg-gradient-to-r from-amber-500 to-amber-400 text-slate-950 font-extrabold text-xs rounded-xl shadow-lg cursor-pointer"
+              >
+                Save to Apple Wallet / Passbook
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

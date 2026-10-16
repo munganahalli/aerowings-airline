@@ -73,10 +73,16 @@ export const PassengerDetailsPage: React.FC = () => {
 
 
 
-  // Check if an individual passenger has all personal details & visa verified
-  const isDomesticWithinIndia = selectedFlight.origin.country.toLowerCase() === 'india' && selectedFlight.destination.country.toLowerCase() === 'india';
+  // SPECIFIC RULE: Only flights flying from India to another country require Aadhaar, Visa, AND PAN Card verification before proceeding forward step!
+  const isFlyingFromIndiaToAbroad = 
+    selectedFlight.origin.country.toLowerCase() === 'india' && 
+    selectedFlight.destination.country.toLowerCase() !== 'india';
 
-  // Helper validation functions based on domestic vs international rules
+  const isDomesticWithinIndia = 
+    selectedFlight.origin.country.toLowerCase() === 'india' && 
+    selectedFlight.destination.country.toLowerCase() === 'india';
+
+  // Helper validation functions based on flight origin and destination
   const validateAadhaar = (num?: string): boolean => {
     if (!num) return false;
     const clean = num.replace(/\s+/g, '');
@@ -84,13 +90,15 @@ export const PassengerDetailsPage: React.FC = () => {
   };
 
   const validatePan = (pan?: string): boolean => {
-    if (isDomesticWithinIndia) return true; // PAN not needed for domestic within India
+    // Only required if flying from India to another country!
+    if (!isFlyingFromIndiaToAbroad) return true;
     if (!pan) return false;
     return /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(pan.toUpperCase().trim());
   };
 
   const validateVisa = (visa?: string): boolean => {
-    if (isDomesticWithinIndia) return true; // Visa not needed for domestic within India
+    // Only required if flying from India to another country!
+    if (!isFlyingFromIndiaToAbroad) return true;
     if (!visa || visa.trim().length < 6) return false;
     return true;
   };
@@ -98,10 +106,22 @@ export const PassengerDetailsPage: React.FC = () => {
   // Check if an individual passenger has all required documents verified
   const isPassengerFullyVerified = (p: typeof passengers[0]): boolean => {
     const hasName = Boolean(p.firstName && p.firstName.trim().length >= 2 && p.lastName && p.lastName.trim().length >= 2);
-    const hasAadhaar = validateAadhaar(p.aadhaarNumber);
-    const hasPan = isDomesticWithinIndia || validatePan(p.panNumber);
-    const hasVisa = isDomesticWithinIndia || validateVisa(p.visaNumber);
-    return Boolean(hasName && hasAadhaar && hasPan && hasVisa);
+    if (!hasName) return false;
+
+    // For flights flying from India to another country: Aadhaar + Visa + PAN Card MUST all be verified!
+    if (isFlyingFromIndiaToAbroad) {
+      const hasAadhaar = validateAadhaar(p.aadhaarNumber);
+      const hasPan = validatePan(p.panNumber);
+      const hasVisa = validateVisa(p.visaNumber);
+      return Boolean(hasAadhaar && hasPan && hasVisa);
+    }
+
+    // For domestic flights within India: Aadhaar is required
+    if (isDomesticWithinIndia) {
+      return validateAadhaar(p.aadhaarNumber);
+    }
+
+    return true;
   };
 
   // Count unverified passengers
@@ -119,30 +139,44 @@ export const PassengerDetailsPage: React.FC = () => {
       addToast(`Traveler ${idx + 1}: Please enter Last Name / Surname.`, 'error');
       return;
     }
-    if (!p.aadhaarNumber || !validateAadhaar(p.aadhaarNumber)) {
-      addToast(`Traveler ${idx + 1}: Please enter a valid 12-digit Aadhaar Card number (e.g. 5412 7890 2341).`, 'error');
-      return;
-    }
-    if (!isDomesticWithinIndia && (!p.panNumber || !validatePan(p.panNumber))) {
-      addToast(`Traveler ${idx + 1}: Please enter a valid 10-character PAN Card (e.g. ABCDE1234F).`, 'error');
-      return;
-    }
-    if (!isDomesticWithinIndia && (!p.visaNumber || !validateVisa(p.visaNumber))) {
-      addToast(`Traveler ${idx + 1}: Valid International Visa / Travel Permit number is mandatory for international flights.`, 'error');
-      return;
+
+    // If flying from India to another country:
+    if (isFlyingFromIndiaToAbroad) {
+      if (!p.aadhaarNumber || !validateAadhaar(p.aadhaarNumber)) {
+        addToast(`Traveler ${idx + 1}: Flying outside India requires a verified 12-digit Aadhaar Card.`, 'error');
+        return;
+      }
+      if (!p.visaNumber || !validateVisa(p.visaNumber)) {
+        addToast(`Traveler ${idx + 1}: Flying to ${selectedFlight.destination.country} requires a verified International Visa number.`, 'error');
+        return;
+      }
+      if (!p.panNumber || !validatePan(p.panNumber)) {
+        addToast(`Traveler ${idx + 1}: Flying outside India mandates a verified 10-character PAN Card (e.g. ABCDE1234F).`, 'error');
+        return;
+      }
+    } else if (isDomesticWithinIndia) {
+      if (!p.aadhaarNumber || !validateAadhaar(p.aadhaarNumber)) {
+        addToast(`Traveler ${idx + 1}: Please enter a valid 12-digit Aadhaar Card number.`, 'error');
+        return;
+      }
     }
 
     setVerifyingIndex(idx);
     setTimeout(() => {
       updatePassenger(idx, {
         isVerified: true,
-        visaStatus: isDomesticWithinIndia ? 'Exempt - Domestic Flight' : 'Verified',
+        visaStatus: isFlyingFromIndiaToAbroad ? 'Aadhaar, Visa & PAN Verified' : (isDomesticWithinIndia ? 'Exempt - Domestic Flight' : 'Verified'),
         verifiedAt: new Date().toISOString()
       });
 
       setVerifyingIndex(null);
-      addToast(`✅ Traveler ${idx + 1} (${p.firstName} ${p.lastName}): ${isDomesticWithinIndia ? 'Aadhaar Card Verified (Domestic Flight)' : 'Aadhaar, PAN & Visa Verified (International Flight)'}!`, 'success');
-      aiVoice.speak(`Traveler ${idx + 1} documents verified successfully.`);
+      addToast(
+        isFlyingFromIndiaToAbroad
+          ? `✅ Traveler ${idx + 1} (${p.firstName} ${p.lastName}): Aadhaar, Visa & PAN Card Verified for travel to ${selectedFlight.destination.country}!`
+          : `✅ Traveler ${idx + 1} (${p.firstName} ${p.lastName}): Documents Verified!`,
+        'success'
+      );
+      aiVoice.speak(`Traveler ${idx + 1} verified.`);
     }, 350);
   };
 
@@ -152,9 +186,11 @@ export const PassengerDetailsPage: React.FC = () => {
       handleFillPassengerSample(idx);
     });
     addToast(
-      isDomesticWithinIndia
-        ? '✅ Auto-verified all travelers with 12-digit Aadhaar cards (Domestic Flight).'
-        : '✅ Auto-verified all travelers with Aadhaar, PAN & Visa credentials (International Flight).',
+      isFlyingFromIndiaToAbroad
+        ? '✅ Auto-verified all travelers: Aadhaar (12-digit), Visa, & PAN Card verified for departure from India!'
+        : (isDomesticWithinIndia
+            ? '✅ Auto-verified all travelers with 12-digit Aadhaar cards (Domestic Flight).'
+            : '✅ Auto-verified all travelers successfully.'),
       'success'
     );
     aiVoice.speak('All travelers verified successfully.');
@@ -176,13 +212,18 @@ export const PassengerDetailsPage: React.FC = () => {
       gender: sample.gender as any,
       dob: sample.dob,
       aadhaarNumber: sample.aadhaar,
-      panNumber: isDomesticWithinIndia ? '' : sample.pan,
-      visaNumber: isDomesticWithinIndia ? 'DOMESTIC_EXEMPT' : sample.visa,
-      visaStatus: isDomesticWithinIndia ? 'Exempt - Domestic Flight' : 'Verified',
+      panNumber: isFlyingFromIndiaToAbroad ? sample.pan : '',
+      visaNumber: isFlyingFromIndiaToAbroad ? sample.visa : (isDomesticWithinIndia ? 'DOMESTIC_EXEMPT' : 'INTL_STANDARD'),
+      visaStatus: isFlyingFromIndiaToAbroad ? 'Aadhaar, Visa & PAN Verified' : (isDomesticWithinIndia ? 'Exempt - Domestic Flight' : 'Verified'),
       isVerified: true,
       verifiedAt: new Date().toISOString()
     });
-    addToast(`✅ Traveler ${idx + 1}: ${isDomesticWithinIndia ? 'Aadhaar Verified' : 'Aadhaar, PAN & Visa Verified'}!`, 'success');
+    addToast(
+      isFlyingFromIndiaToAbroad
+        ? `✅ Traveler ${idx + 1}: Aadhaar, Visa & PAN Verified for flight leaving India!`
+        : `✅ Traveler ${idx + 1}: Verified!`,
+      'success'
+    );
     aiVoice.speak(`Traveler ${idx + 1} verified.`);
   };
 
@@ -231,30 +272,30 @@ export const PassengerDetailsPage: React.FC = () => {
   };
 
   // STRICT PROCEED HANDLER:
-  // Validates manual user inputs or auto-verified credentials; NO phone OTP!
+  // For flights flying from India to another country: verify Aadhaar, Visa, Pan Card THEN ONLY proceed forward step!
   const handleProceedToSeats = () => {
     const unverifiedTravelers: string[] = [];
 
     passengers.forEach((p, i) => {
       const hasName = Boolean(p.firstName && p.firstName.trim().length >= 2 && p.lastName && p.lastName.trim().length >= 2);
       const hasAadhaar = validateAadhaar(p.aadhaarNumber);
-      const hasPan = isDomesticWithinIndia || validatePan(p.panNumber);
-      const hasVisa = isDomesticWithinIndia || validateVisa(p.visaNumber);
+      const hasVisa = !isFlyingFromIndiaToAbroad || validateVisa(p.visaNumber);
+      const hasPan = !isFlyingFromIndiaToAbroad || validatePan(p.panNumber);
 
       if (!hasName) {
         unverifiedTravelers.push(`Traveler ${i + 1} (Name missing)`);
       } else if (!hasAadhaar) {
         unverifiedTravelers.push(`Traveler ${i + 1} (Aadhaar 12 digits missing/invalid)`);
-      } else if (!isDomesticWithinIndia && !hasPan) {
-        unverifiedTravelers.push(`Traveler ${i + 1} (PAN card invalid)`);
-      } else if (!isDomesticWithinIndia && !hasVisa) {
-        unverifiedTravelers.push(`Traveler ${i + 1} (Visa number invalid)`);
+      } else if (isFlyingFromIndiaToAbroad && !validateVisa(p.visaNumber)) {
+        unverifiedTravelers.push(`Traveler ${i + 1} (Visa number missing/invalid for travel to ${selectedFlight.destination.country})`);
+      } else if (isFlyingFromIndiaToAbroad && !validatePan(p.panNumber)) {
+        unverifiedTravelers.push(`Traveler ${i + 1} (PAN Card 10-char missing/invalid)`);
       } else {
         // Automatically ensure verified flag is set for valid inputs
         if (!p.isVerified) {
           updatePassenger(i, {
             isVerified: true,
-            visaStatus: isDomesticWithinIndia ? 'Exempt - Domestic Flight' : 'Verified',
+            visaStatus: isFlyingFromIndiaToAbroad ? 'Aadhaar, Visa & PAN Verified' : (isDomesticWithinIndia ? 'Exempt - Domestic Flight' : 'Verified'),
             verifiedAt: new Date().toISOString()
           });
         }
@@ -262,8 +303,17 @@ export const PassengerDetailsPage: React.FC = () => {
     });
 
     if (unverifiedTravelers.length > 0) {
-      addToast(`⛔ Verification Incomplete: ${unverifiedTravelers.join(', ')}. Please complete required documents before proceeding.`, 'error');
-      aiVoice.speak('Verification incomplete. Please enter valid passenger identification details.');
+      addToast(
+        isFlyingFromIndiaToAbroad
+          ? `⛔ Flights from India to ${selectedFlight.destination.country} mandate Aadhaar, Visa & PAN Card! Please verify: ${unverifiedTravelers.join(', ')}`
+          : `⛔ Verification Incomplete: ${unverifiedTravelers.join(', ')}. Please complete required documents before proceeding.`,
+        'error'
+      );
+      aiVoice.speak(
+        isFlyingFromIndiaToAbroad
+          ? 'Aadhaar, Visa, and Pan Card verification is required to proceed.'
+          : 'Verification incomplete. Please enter valid passenger identification details.'
+      );
       return; // STRICT STOP!
     }
 
@@ -547,7 +597,7 @@ export const PassengerDetailsPage: React.FC = () => {
                   <span className="text-[10px] text-slate-400 font-mono">UIDAI / NSDL / IATA Connected</span>
                 </div>
 
-                <div className={`grid grid-cols-1 ${isDomesticWithinIndia ? 'sm:grid-cols-1 max-w-md' : 'sm:grid-cols-3'} gap-3`}>
+                <div className={`grid grid-cols-1 ${!isFlyingFromIndiaToAbroad ? 'sm:grid-cols-1 max-w-md' : 'sm:grid-cols-3'} gap-3`}>
                   {/* Aadhaar Card */}
                   <div className="space-y-1.5">
                     <label className="block text-[11px] font-semibold text-slate-300 flex items-center justify-between">
@@ -571,7 +621,7 @@ export const PassengerDetailsPage: React.FC = () => {
                           const isValidNow = v.length === 12;
                           updatePassenger(idx, {
                             aadhaarNumber: formatted,
-                            isVerified: isDomesticWithinIndia ? (isValidNow && Boolean(p.firstName && p.lastName)) : p.isVerified
+                            isVerified: !isFlyingFromIndiaToAbroad ? (isValidNow && Boolean(p.firstName && p.lastName)) : p.isVerified
                           });
                         }}
                         placeholder="5432 8901 2345"
@@ -584,7 +634,7 @@ export const PassengerDetailsPage: React.FC = () => {
                         onClick={() => {
                           if (isAadhaarValid) {
                             addToast(`Traveler ${idx + 1}: Aadhaar Card ${p.aadhaarNumber} verified successfully via UIDAI!`, 'success');
-                            if (isDomesticWithinIndia) {
+                            if (!isFlyingFromIndiaToAbroad) {
                               updatePassenger(idx, { isVerified: true, visaStatus: 'Exempt - Domestic Flight' });
                             }
                           } else {
@@ -602,7 +652,7 @@ export const PassengerDetailsPage: React.FC = () => {
                     </div>
                   </div>
 
-                  {!isDomesticWithinIndia && (
+                  {isFlyingFromIndiaToAbroad && (
                     <>
                       {/* PAN Card */}
                       <div className="space-y-1.5">
@@ -808,9 +858,17 @@ export const PassengerDetailsPage: React.FC = () => {
           <button
             type="button"
             onClick={handleProceedToSeats}
-            className="px-6 py-3 bg-gradient-to-r from-blue-600 to-sky-500 hover:from-blue-500 hover:to-sky-400 text-white text-xs font-extrabold rounded-xl shadow-lg shadow-blue-500/25 transition-all flex items-center gap-2 cursor-pointer"
+            className={`px-6 py-3 text-xs font-extrabold rounded-xl shadow-lg transition-all flex items-center gap-2 cursor-pointer ${
+              isFlyingFromIndiaToAbroad && !isAllVerified
+                ? 'bg-amber-600 hover:bg-amber-500 text-white shadow-amber-600/30 ring-2 ring-amber-400/50'
+                : 'bg-gradient-to-r from-blue-600 to-sky-500 hover:from-blue-500 hover:to-sky-400 text-white shadow-blue-500/25'
+            }`}
           >
-            <span>{t('passenger.continueToSeats')}</span>
+            <span>
+              {isFlyingFromIndiaToAbroad && !isAllVerified
+                ? `Verify Aadhaar, Visa & PAN (${unverifiedCount} Left) to Proceed`
+                : t('passenger.continueToSeats')}
+            </span>
             <ArrowRight className="w-4 h-4" />
           </button>
         </div>

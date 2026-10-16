@@ -136,16 +136,6 @@ export const BookingStepBar: React.FC<BookingStepBarProps> = ({
             </div>
 
             <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={handlePlayVoice}
-                className="p-2 rounded-xl bg-slate-800 text-sky-400 hover:text-sky-300 hover:bg-slate-700 active:scale-95 border border-slate-700 text-xs font-semibold flex items-center gap-1 cursor-pointer"
-                title="Listen to audio instructions"
-              >
-                <Volume2 className="w-3.5 h-3.5" />
-                <span className="text-[10px] hidden xs:inline">Audio Guide</span>
-              </button>
-
               {firstTimeFlyerTip && (
                 <button
                   type="button"
